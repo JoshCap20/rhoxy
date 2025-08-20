@@ -1,6 +1,7 @@
 use clap::Parser;
-use http::{Request, Response};
-use std::{io::{BufRead, BufReader}, net::{TcpListener, TcpStream}};
+use anyhow::Result;
+use reqwest::blocking::Response;
+use std::{io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}};
 
 #[derive(Parser)]
 struct CommandLineArguments {
@@ -26,14 +27,7 @@ fn start_server(port: u16) {
     }
 }
 
-/*
-HTTP Request Format:
-Method Request-URI HTTP-Version CRLF
-headers CRLF
-message-body
-*/
-
-fn handle_connection(stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream) {
     let buf_reader: BufReader<&TcpStream> = BufReader::new(&stream);
     let http_request: Vec<_> = buf_reader
         .lines()
@@ -41,5 +35,14 @@ fn handle_connection(stream: TcpStream) {
         .take_while(|line| !line.is_empty())
         .collect();
 
-    println!("Request: {http_request:#?}");
+    let response = match send_request() {
+        Ok(res) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", res.content_length().unwrap_or(0), res.text().unwrap()),
+        Err(err) => format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\n\r\n{}", err.to_string().len(), err),
+    };
+    stream.write_all(response.as_bytes()).unwrap();
+}
+
+fn send_request() -> Result<Response> {
+    let res = reqwest::blocking::get("http://example.com")?;
+    Ok(res)
 }
