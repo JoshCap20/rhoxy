@@ -127,7 +127,12 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 }
 
 fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .danger_accept_invalid_certs(true) // for testing
+        .no_proxy()
+        .build()?;
+
     let mut req = client.request(request.method.clone(), request.url.clone());
     for (key, value) in &request.headers {
         req = req.header(key, value);
