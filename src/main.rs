@@ -45,26 +45,38 @@ fn start_server(port: u16) -> Result<()> {
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(&stream);
-    let mut lines = reader.lines();
+    
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line)?;
+    let first_line = first_line.trim();
 
-    let first_line = lines.next().ok_or_else(|| anyhow::anyhow!("No request line found"))??;
     let parts: Vec<&str> = first_line.split_whitespace().collect();
     if parts.len() != 3 {
         return Err(anyhow::anyhow!("Invalid request line: {}", first_line));
     }
+
     let method = Method::from_bytes(parts[0].as_bytes())
         .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
     let url = Url::parse(parts[1])
         .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     let mut headers = HashMap::new();
-    for line in lines.by_ref().map_while(|res| res.ok().filter(|s| !s.is_empty())) {
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line)?;
+        let line = line.trim();
+        
+        if line.is_empty() {
+            break;
+        }
+        
         if let Some((key, value)) = line.split_once(':') {
             headers.insert(key.trim().to_string(), value.trim().to_string());
         } else {
             return Err(anyhow::anyhow!("Invalid header line: {}", line));
         }
     }
+
 
     let body = if let Some(len_str) = headers.get("Content-Length") {
         let len: usize = len_str.parse().map_err(|_| anyhow::anyhow!("Invalid Content-Length"))?;
