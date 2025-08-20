@@ -1,5 +1,6 @@
 use clap::Parser;
-use std::net::{TcpListener, TcpStream};
+use http::{Request, Response};
+use std::{io::{BufRead, BufReader}, net::{TcpListener, TcpStream}};
 
 #[derive(Parser)]
 struct CommandLineArguments {
@@ -17,8 +18,28 @@ fn start_server(port: u16) {
     println!("Server listening on {}", &addr);
 
     for stream in listener.incoming() {
-        let _stream: TcpStream = stream.unwrap();
+        let stream: TcpStream = stream.unwrap();
 
-        println!("Connection established!");
+        println!("Connection established from {}", stream.peer_addr().unwrap());
+        handle_connection(stream);
+        println!("Connection closed.");
     }
+}
+
+/*
+HTTP Request Format:
+Method Request-URI HTTP-Version CRLF
+headers CRLF
+message-body
+*/
+
+fn handle_connection(stream: TcpStream) {
+    let buf_reader: BufReader<&TcpStream> = BufReader::new(&stream);
+    let http_request: Vec<_> = buf_reader
+        .lines()
+        .map(|result| result.unwrap())
+        .take_while(|line| !line.is_empty())
+        .collect();
+
+    println!("Request: {http_request:#?}");
 }
