@@ -13,6 +13,7 @@ struct HttpRequest {
     method: Method,
     url: Url,
     headers: HashMap<String, String>,
+    body: Option<Vec<u8>>,
 }
 
 fn main() {
@@ -64,10 +65,20 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         }
     }
 
+    let body = if let Some(len_str) = headers.get("Content-Length") {
+        let len: usize = len_str.parse().map_err(|_| anyhow::anyhow!("Invalid Content-Length"))?;
+        let mut body_vec = vec![0u8; len];
+        reader.read_exact(&mut body_vec)?;
+        Some(body_vec)
+    } else {
+        None
+    };
+
     let request = HttpRequest {
         method,
         url,
         headers,
+        body
     };
 
     let response = match send_request(&request) {
