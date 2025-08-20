@@ -1,7 +1,13 @@
-use std::io;
+use clap::Parser;
+
+#[derive(Parser)]
+struct CommandLineArguments {
+    port: u16
+}
 
 fn main() {
-    let port: u16 = 8080;
+    let args = CommandLineArguments::parse();
+    start_server(args.port);
 }
 
 fn start_server(port: u16) {
