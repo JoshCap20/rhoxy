@@ -42,20 +42,27 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     }
 
     let response = match send_request(parts[0], parts[1]) {
-        Ok(res) => format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", res.content_length().unwrap_or(0), res.text().unwrap()),
-        Err(err) => format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\n\r\n{}", err.to_string().len(), err),
+        Ok(res) => {
+            let content_length = res.content_length().unwrap_or(0);
+            let body = res.text().unwrap();
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", content_length, body)
+        },
+        Err(err) => {
+            let err_str = err.to_string();
+            format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\n\r\n{}", err_str.len(), err_str)
+        },
     };
-    stream.write_all(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+    stream.write_all(response.as_bytes())?;
+    stream.flush()?;
     println!("Response sent for request: {}", first_line);
     Ok(())
 }
 
-fn send_request(method: &str, url: &str) -> Result<reqwest::blocking::Response, anyhow::Error> {
+fn send_request(method: &str, url: &str) -> Result<reqwest::blocking::Response, String> {
     // todo add support for POST body and other headers
     match method {
-        "GET" => reqwest::blocking::get(url).map_err(|e| anyhow::anyhow!(e)),
-        "POST" => reqwest::blocking::Client::new().post(url).send().map_err(|e| anyhow::anyhow!(e)),
-        _ => Err(anyhow::anyhow!("Method not allowed")),
+        "GET" => reqwest::blocking::get(url).map_err(|e| e.to_string()),
+        "POST" => reqwest::blocking::Client::new().post(url).send().map_err(|e| e.to_string()),
+        _ => Err(format!("Unsupported HTTP method: {}", method)),
     }
 }
