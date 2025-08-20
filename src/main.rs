@@ -1,15 +1,25 @@
 use clap::Parser;
 use anyhow::Result;
-use std::{io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}};
+use http::Method;
+use reqwest::Url;
+use std::{collections::HashMap, io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}};
 
 #[derive(Parser)]
 struct CommandLineArguments {
     port: u16 // allows values 0...65535
 }
 
+struct HttpRequest {
+    method: Method,
+    url: Url,
+    headers: HashMap<String, String>,
+}
+
 fn main() {
     let args = CommandLineArguments::parse();
-    start_server(args.port);
+    if let Err(e) = start_server(args.port) {
+        eprintln!("Server error: {}", e);
+    }
 }
 
 fn start_server(port: u16) -> Result<()> {
@@ -40,12 +50,32 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     if parts.len() != 3 {
         return Err(anyhow::anyhow!("Invalid request line: {}", first_line));
     }
+    let method = Method::from_bytes(parts[0].as_bytes())
+        .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
+    let url = Url::parse(parts[1])
+        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
-    let response = match send_request(parts[0], parts[1]) {
+    let mut headers = HashMap::new();
+    for line in lines.by_ref().map_while(|res| res.ok().filter(|s| !s.is_empty())) {
+        if let Some((key, value)) = line.split_once(':') {
+            headers.insert(key.trim().to_string(), value.trim().to_string());
+        } else {
+            return Err(anyhow::anyhow!("Invalid header line: {}", line));
+        }
+    }
+
+    let request = HttpRequest {
+        method,
+        url,
+        headers,
+    };
+
+    let response = match send_request(&request) {
         Ok(res) => {
             let content_length = res.content_length().unwrap_or(0);
+            let response_status = res.status();
             let body = res.text().unwrap();
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", content_length, body)
+            format!("HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}", response_status, content_length, body)
         },
         Err(err) => {
             let err_str = err.to_string();
@@ -54,15 +84,16 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     };
     stream.write_all(response.as_bytes())?;
     stream.flush()?;
-    println!("Response sent for request: {}", first_line);
+    println!("Response sent for request: {}, {}", first_line, response);
     Ok(())
 }
 
-fn send_request(method: &str, url: &str) -> Result<reqwest::blocking::Response, String> {
+fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     // todo add support for POST body and other headers
-    match method {
-        "GET" => reqwest::blocking::get(url).map_err(|e| e.to_string()),
-        "POST" => reqwest::blocking::Client::new().post(url).send().map_err(|e| e.to_string()),
-        _ => Err(format!("Unsupported HTTP method: {}", method)),
+    let client = reqwest::blocking::Client::new();
+    let mut req = client.request(request.method.clone(), request.url.clone());
+    for (key, value) in &request.headers {
+        req = req.header(key, value);
     }
+    Ok(req.send()?)
 }
