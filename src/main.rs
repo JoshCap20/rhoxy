@@ -60,11 +60,12 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     let method = Method::from_bytes(parts[0].as_bytes())
         .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
-    let url = Url::parse(parts[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     if method == Method::CONNECT {
-        return rhoxy::handle_connect_method(&mut stream, &mut reader, parts[1]);
+        return rhoxy::https::handle_connect_method(&mut stream, &mut reader, parts[1]);
     }
+
+    let url = Url::parse(parts[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     let mut headers = HashMap::new();
     loop {
