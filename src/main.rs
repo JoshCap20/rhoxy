@@ -43,8 +43,9 @@ fn start_server(port: u16) -> Result<()> {
 // GET and HTTP only for now (no validation cus idk how)
 // need to handle CONNECT requests
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let buf_reader: BufReader<&TcpStream> = BufReader::new(&stream);
-    let mut lines = buf_reader.lines();
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    let mut reader = BufReader::new(&stream);
+    let mut lines = reader.lines();
 
     let first_line = lines.next().ok_or_else(|| anyhow::anyhow!("No request line found"))??;
     let parts: Vec<&str> = first_line.split_whitespace().collect();
