@@ -1,12 +1,17 @@
-use clap::Parser;
 use anyhow::Result;
+use clap::Parser;
 use http::Method;
 use reqwest::Url;
-use std::{collections::HashMap, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}, time::Duration};
+use std::{
+    collections::HashMap,
+    io::{BufRead, BufReader, Read, Write},
+    net::{TcpListener, TcpStream},
+    time::Duration,
+};
 
 #[derive(Parser)]
 struct CommandLineArguments {
-    port: u16 // allows values 0...65535
+    port: u16, // allows values 0...65535
 }
 
 struct HttpRequest {
@@ -39,13 +44,12 @@ fn start_server(port: u16) -> Result<()> {
     Ok(())
 }
 
-
 // GET and HTTP only for now (no validation cus idk how)
 // need to handle CONNECT requests
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(&stream);
-    
+
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;
     let first_line = first_line.trim();
@@ -57,19 +61,18 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     let method = Method::from_bytes(parts[0].as_bytes())
         .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
-    let url = Url::parse(parts[1])
-        .map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+    let url = Url::parse(parts[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     let mut headers = HashMap::new();
     loop {
         let mut line = String::new();
         reader.read_line(&mut line)?;
         let line = line.trim();
-        
+
         if line.is_empty() {
             break;
         }
-        
+
         if let Some((key, value)) = line.split_once(':') {
             headers.insert(key.trim().to_string(), value.trim().to_string());
         } else {
@@ -77,9 +80,10 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         }
     }
 
-
     let body = if let Some(len_str) = headers.get("Content-Length") {
-        let len: usize = len_str.parse().map_err(|_| anyhow::anyhow!("Invalid Content-Length"))?;
+        let len: usize = len_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid Content-Length"))?;
         let mut body_vec = vec![0u8; len];
         reader.read_exact(&mut body_vec)?;
         Some(body_vec)
@@ -91,12 +95,16 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         method,
         url,
         headers,
-        body
+        body,
     };
 
     let res = send_request(&request)?;
 
-    let mut response = format!("HTTP/1.1 {} {}\r\n", res.status().as_u16(), res.status().canonical_reason().unwrap_or(""));
+    let mut response = format!(
+        "HTTP/1.1 {} {}\r\n",
+        res.status().as_u16(),
+        res.status().canonical_reason().unwrap_or("")
+    );
     for (key, value) in res.headers() {
         response.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
     }
@@ -107,7 +115,12 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     stream.write_all(&body_bytes)?;
 
     stream.flush()?;
-    println!("Response sent for request: {}, {}", first_line, response);
+    println!(
+        "Response sent for request: {}\n\n\n\n{}\n{}",
+        first_line,
+        response,
+        String::from_utf8_lossy(&body_bytes)
+    );
     Ok(())
 }
 
