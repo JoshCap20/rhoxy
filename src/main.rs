@@ -83,10 +83,10 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let url_string = parts[1];
 
     if method == Method::CONNECT {
-        return rhoxy::https::handle_connect_method(&mut stream, &mut reader, url_string);
+        return rhoxy::protocol::https::handle_connect_method(&mut stream, &mut reader, url_string);
     }
 
-    rhoxy::handle_http_request(&mut stream, &mut reader, method, url_string)?;
+    rhoxy::protocol::http::handle_http_request(&mut stream, &mut reader, method, url_string)?;
 
     Ok(())
 }
