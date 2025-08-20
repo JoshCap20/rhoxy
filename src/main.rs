@@ -3,7 +3,7 @@ use clap::Parser;
 use http::Method;
 use reqwest::Url;
 use std::{
-    collections::HashMap, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}, thread, time::Duration
+    collections::HashMap, io::{BufRead, BufReader, Read}, net::{TcpListener, TcpStream}, thread, time::Duration
 };
 
 #[derive(Parser)]
@@ -34,19 +34,20 @@ fn start_server(port: u16) -> Result<()> {
         let stream = stream?;
 
         println!("Connection from {}", stream.peer_addr()?);
+        // TODO: Handle with thread pool
         thread::spawn(|| {
-        if let Err(e) = handle_connection(stream) {
-            println!("Error handling connection: {}", e);
-        }
-        println!("Connection closed");
+            if let Err(e) = handle_connection(stream) {
+                println!("Error handling connection: {}", e);
+            }
+            println!("Connection closed");
         }); 
     }
     Ok(())
 }
 
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut reader = BufReader::new(&stream);
+    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+    let mut reader = BufReader::new(stream.try_clone()?);
 
     let mut first_line = String::new();
     reader.read_line(&mut first_line)?;
@@ -62,7 +63,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let url = Url::parse(parts[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     if method == Method::CONNECT {
-        return handle_connect_method(&mut stream, &url);
+        return rhoxy::handle_connect_method(&mut stream, &mut reader, parts[1]);
     }
 
     let mut headers = HashMap::new();
@@ -75,7 +76,7 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
             break;
         }
 
-        if let Some((key, value)) = line.split_once(':') {
+       if let Some((key, value)) = line.split_once(':') {
             headers.insert(key.trim().to_string(), value.trim().to_string());
         } else {
             return Err(anyhow::anyhow!("Invalid header line: {}", line));
@@ -101,28 +102,8 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     };
 
     let res = send_request(&request)?;
+    rhoxy::forward_response(&mut stream, res)?;
 
-    let mut response = format!(
-        "HTTP/1.1 {} {}\r\n",
-        res.status().as_u16(),
-        res.status().canonical_reason().unwrap_or("")
-    );
-    for (key, value) in res.headers() {
-        response.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
-    }
-    response.push_str("\r\n");
-    stream.write_all(response.as_bytes())?;
-
-    let body_bytes = res.bytes()?;
-    stream.write_all(&body_bytes)?;
-
-    stream.flush()?;
-    println!(
-        "Response sent for request: {}\n\n\n\n{}\n{}",
-        first_line,
-        response,
-        String::from_utf8_lossy(&body_bytes)
-    );
     Ok(())
 }
 
@@ -142,15 +123,4 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     }
     let response = req.send()?;
     Ok(response)
-}
-
-fn handle_connect_method(stream: &mut TcpStream, target: &Url) -> Result<()> {
-    println!("CONNECT request to: {}", target);
-    // TODO: establish a tunnel to the target
-    let response = "HTTP/1.1 200 Connection established\r\n\r\n";
-    stream.write_all(response.as_bytes())?;
-    stream.flush()?;
-    
-    println!("CONNECT tunneling not fully implemented - HTTPS may not work");
-    Ok(())
 }
