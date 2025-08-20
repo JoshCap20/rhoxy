@@ -44,8 +44,6 @@ fn start_server(port: u16) -> Result<()> {
     Ok(())
 }
 
-// GET and HTTP only for now (no validation cus idk how)
-// need to handle CONNECT requests
 fn handle_connection(mut stream: TcpStream) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(&stream);
@@ -62,6 +60,10 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     let method = Method::from_bytes(parts[0].as_bytes())
         .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
     let url = Url::parse(parts[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+
+    if method == Method::CONNECT {
+        return handle_connect_method(&mut stream, &url);
+    }
 
     let mut headers = HashMap::new();
     loop {
@@ -125,7 +127,6 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 }
 
 fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
-    // todo add support for POST body and other headers
     let client = reqwest::blocking::Client::new();
     let mut req = client.request(request.method.clone(), request.url.clone());
     for (key, value) in &request.headers {
@@ -136,4 +137,15 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     }
     let response = req.send()?;
     Ok(response)
+}
+
+fn handle_connect_method(stream: &mut TcpStream, target: &Url) -> Result<()> {
+    println!("CONNECT request to: {}", target);
+    // TODO: establish a tunnel to the target
+    let response = "HTTP/1.1 200 Connection established\r\n\r\n";
+    stream.write_all(response.as_bytes())?;
+    stream.flush()?;
+    
+    println!("CONNECT tunneling not fully implemented - HTTPS may not work");
+    Ok(())
 }
