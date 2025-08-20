@@ -51,7 +51,18 @@ pub fn handle_http_request(
     let body = parser::parse_request_body(reader, content_length)?;
 
     let request = HttpRequest::new(method, url, headers, body);
-    forward_response(stream, send_request(&request)?)?;
+    match send_request(&request) {
+        Ok(response) => forward_response(stream, response)?,
+        Err(e) => {
+            let error_response = format!(
+                "HTTP/1.1 502 Bad Gateway\r\n\r\nProxy error: {}",
+                e
+            );
+            stream.write_all(error_response.as_bytes())?;
+            stream.flush()?;
+            return Err(e);
+        }
+    }
 
     Ok(())
 }
