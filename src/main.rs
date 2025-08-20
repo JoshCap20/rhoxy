@@ -3,10 +3,7 @@ use clap::Parser;
 use http::Method;
 use reqwest::Url;
 use std::{
-    collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
-    net::{TcpListener, TcpStream},
-    time::Duration,
+    collections::HashMap, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}, thread, time::Duration
 };
 
 #[derive(Parser)]
@@ -35,11 +32,14 @@ fn start_server(port: u16) -> Result<()> {
 
     for stream in listener.incoming() {
         let stream = stream?;
+
         println!("Connection from {}", stream.peer_addr()?);
+        thread::spawn(|| {
         if let Err(e) = handle_connection(stream) {
             println!("Error handling connection: {}", e);
         }
         println!("Connection closed");
+        }); 
     }
     Ok(())
 }
