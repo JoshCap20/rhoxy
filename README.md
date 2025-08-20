@@ -1,0 +1,1 @@
+Trying to learn Rust by creating a HTTP proxy server (hopefully will extend to HTTPS after). SOCKS would be cooler but I don't want to kill myself in the process.
