@@ -1,4 +1,5 @@
 use anyhow::Result;
+use log::{debug, error, warn};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::TcpStream,
@@ -24,7 +25,7 @@ pub fn handle_connect_method(
     let target_stream = match TcpStream::connect(format!("{}:{}", host, port)) {
         Ok(stream) => stream,
         Err(e) => {
-            println!("Failed to connect to target: {}", e);
+            error!("Failed to connect to target: {}", e);
             let error_response = format!(
                 "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to {}: {}",
                 target, e
@@ -38,7 +39,7 @@ pub fn handle_connect_method(
     let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
     client_stream.write_all(response.as_bytes())?;
     client_stream.flush()?;
-    println!("Tunnel established to {}", target);
+    debug!("Tunnel established to {}", target);
 
     tunnel_data(client_stream.try_clone()?, target_stream)?;
 
@@ -59,22 +60,22 @@ fn tunnel_data(client_stream: TcpStream, target_stream: TcpStream) -> Result<()>
         loop {
             match client_reader.read(&mut buffer) {
                 Ok(0) => {
-                    println!("Client closed connection");
+                    debug!("Client closed connection");
                     break;
                 }
                 Ok(n) => {
                     if let Err(e) = target_writer.write_all(&buffer[..n]) {
-                        println!("Error writing to target: {}", e);
+                        warn!("Error writing to target: {}", e);
                         break;
                     }
                     if let Err(e) = target_writer.flush() {
-                        println!("Error flushing target: {}", e);
+                        warn!("Error flushing target: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
                     if !is_timeout_or_would_block(&e) {
-                        println!("Error reading from client: {}", e);
+                        warn!("Error reading from client: {}", e);
                     }
                     break;
                 }
@@ -87,22 +88,22 @@ fn tunnel_data(client_stream: TcpStream, target_stream: TcpStream) -> Result<()>
     loop {
         match target_reader.read(&mut buffer) {
             Ok(0) => {
-                println!("Target closed connection");
+                debug!("Target closed connection");
                 break;
             }
             Ok(n) => {
                 if let Err(e) = client_writer.write_all(&buffer[..n]) {
-                    println!("Error writing to client: {}", e);
+                    warn!("Error writing to client: {}", e);
                     break;
                 }
                 if let Err(e) = client_writer.flush() {
-                    println!("Error flushing client: {}", e);
+                    warn!("Error flushing client: {}", e);
                     break;
                 }
             }
             Err(e) => {
                 if !is_timeout_or_would_block(&e) {
-                    println!("Error reading from target: {}", e);
+                    warn!("Error reading from target: {}", e);
                 }
                 break;
             }
@@ -112,7 +113,7 @@ fn tunnel_data(client_stream: TcpStream, target_stream: TcpStream) -> Result<()>
     let _ = client_writer.shutdown(std::net::Shutdown::Both);
     let _ = client_to_target.join();
 
-    println!("Tunnel closed");
+    debug!("Tunnel closed");
     Ok(())
 }
 

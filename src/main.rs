@@ -1,27 +1,45 @@
 use anyhow::Result;
 use clap::Parser;
 use http::Method;
+use log::{debug, error, info};
 use std::{
     io::{BufRead, BufReader},
     net::{TcpListener, TcpStream},
-    thread,
     time::Duration,
 };
 use threadpool::ThreadPool;
 
 #[derive(Parser)]
 struct CommandLineArguments {
+    #[arg(short, long, default_value = "8080", help = "Port to listen on")]
     port: u16, // allows values 0...65535
+
+    #[arg(short, long, help = "Number of worker threads (default: CPU count)")]
+    threads: Option<usize>,
+
+    #[arg(long, help = "Enable debug logging")]
+    verbose: bool,
 }
 
 fn main() {
     let args = CommandLineArguments::parse();
-    if let Err(e) = start_server(args.port) {
-        eprintln!("Server error: {}", e);
+
+    if args.verbose {
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Debug)
+            .init();
+    } else {
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Info)
+            .init();
+    }
+
+    if let Err(e) = start_server(args.port, args.threads) {
+        error!("Server error: {}", e);
     }
 }
 
-fn start_server(port: u16) -> Result<()> {
+fn start_server(port: u16, threads: Option<usize>) -> Result<()> {
     let addr = format!("127.0.0.1:{}", port);
     let listener = TcpListener::bind(&addr)?;
     info!("Server listening on {}", addr);

@@ -3,6 +3,7 @@ pub mod parser;
 
 use anyhow::Result;
 use http::Method;
+use log::error;
 use reqwest::Url;
 use std::{
     collections::HashMap,
@@ -54,10 +55,8 @@ pub fn handle_http_request(
     match send_request(&request) {
         Ok(response) => forward_response(stream, response)?,
         Err(e) => {
-            let error_response = format!(
-                "HTTP/1.1 502 Bad Gateway\r\n\r\nProxy error: {}",
-                e
-            );
+            error!("Failed to send request: {}", e);
+            let error_response = format!("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy error: {}", e);
             stream.write_all(error_response.as_bytes())?;
             stream.flush()?;
             return Err(e);
