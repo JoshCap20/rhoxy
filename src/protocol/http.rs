@@ -71,25 +71,25 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     Ok(response)
 }
 
-fn forward_response(stream: &mut TcpStream, res: reqwest::blocking::Response) -> Result<()> {
-    let mut response = format!(
-        "HTTP/1.1 {} {}\r\n",
-        res.status().as_u16(),
-        res.status().canonical_reason().unwrap_or("")
+fn forward_response(stream: &mut TcpStream, response: reqwest::blocking::Response) -> Result<()> {
+    let mut response_headers = format!(
+        "{} {} {}\r\n",
+        http_version_to_string(response.version()),
+        response.status().as_u16(),
+        response.status().canonical_reason().unwrap_or("")
     );
 
-    for (key, value) in res.headers() {
+    response.headers().iter().for_each(|(key, value)| {
         let key_str = key.as_str();
         if key_str != "connection" && key_str != "transfer-encoding" {
-            response.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
+            response_headers.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
         }
-    }
-    response.push_str("\r\n");
+    });
+    response_headers.push_str("\r\n");
 
-    stream.write_all(response.as_bytes())?;
+    stream.write_all(response_headers.as_bytes())?;
 
-    let body_bytes = res.bytes()?;
-    stream.write_all(&body_bytes)?;
+    stream.write_all(&response.bytes()?)?;
     stream.flush()?;
 
     Ok(())
@@ -125,5 +125,19 @@ fn parse_request_body(
         Ok(Some(body))
     } else {
         Ok(None)
+    }
+}
+
+fn http_version_to_string(version: http::Version) -> &'static str {
+    match version {
+        http::Version::HTTP_09 => "HTTP/0.9",
+        http::Version::HTTP_10 => "HTTP/1.0",
+        http::Version::HTTP_11 => "HTTP/1.1",
+        http::Version::HTTP_2 => "HTTP/2.0",
+        http::Version::HTTP_3 => "HTTP/3.0",
+        _ => {
+            log::warn!("Unknown HTTP version: {:?}", version);
+            "HTTP/1.1"
+        }
     }
 }
