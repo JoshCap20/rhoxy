@@ -72,22 +72,18 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
 }
 
 fn forward_response(stream: &mut TcpStream, response: reqwest::blocking::Response) -> Result<()> {
-    let mut response_headers = format!(
+   write!(
+        stream,
         "{} {} {}\r\n",
         http_version_to_string(response.version()),
         response.status().as_u16(),
         response.status().canonical_reason().unwrap_or("")
-    );
+    )?;
 
-    response.headers().iter().for_each(|(key, value)| {
-        let key_str = key.as_str();
-        if key_str != "connection" && key_str != "transfer-encoding" {
-            response_headers.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
-        }
-    });
-    response_headers.push_str("\r\n");
-
-    stream.write_all(response_headers.as_bytes())?;
+    for (key, value) in response.headers().iter() {
+        write!(stream, "{}: {}\r\n", key, value.to_str().unwrap_or(""))?;
+    }
+    write!(stream, "\r\n")?;
 
     stream.write_all(&response.bytes()?)?;
     stream.flush()?;
