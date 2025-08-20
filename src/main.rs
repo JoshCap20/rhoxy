@@ -2,7 +2,7 @@ use clap::Parser;
 use anyhow::Result;
 use http::Method;
 use reqwest::Url;
-use std::{collections::HashMap, io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}};
+use std::{collections::HashMap, io::{BufRead, BufReader, Read, Write}, net::{TcpListener, TcpStream}, time::Duration};
 
 #[derive(Parser)]
 struct CommandLineArguments {
@@ -82,19 +82,18 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         body
     };
 
-    let response = match send_request(&request) {
-        Ok(res) => {
-            let content_length = res.content_length().unwrap_or(0);
-            let response_status = res.status();
-            let body = res.text().unwrap();
-            format!("HTTP/1.1 {}\r\nContent-Length: {}\r\n\r\n{}", response_status, content_length, body)
-        },
-        Err(err) => {
-            let err_str = err.to_string();
-            format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\n\r\n{}", err_str.len(), err_str)
-        },
-    };
+    let res = send_request(&request)?;
+
+    let mut response = format!("HTTP/1.1 {} {}\r\n", res.status().as_u16(), res.status().canonical_reason().unwrap_or(""));
+    for (key, value) in res.headers() {
+        response.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
+    }
+    response.push_str("\r\n");
     stream.write_all(response.as_bytes())?;
+
+    let body_bytes = res.bytes()?;
+    stream.write_all(&body_bytes)?;
+
     stream.flush()?;
     println!("Response sent for request: {}, {}", first_line, response);
     Ok(())
@@ -107,5 +106,9 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     for (key, value) in &request.headers {
         req = req.header(key, value);
     }
-    Ok(req.send()?)
+    if let Some(body) = &request.body {
+        req = req.body(body.clone());
+    }
+    let response = req.send()?;
+    Ok(response)
 }
