@@ -7,6 +7,9 @@ Simple HTTP/HTTPS proxy in Rust (my inaugural rust project)
 Arguments:
 
 ```
+#[arg(long, default_value = "127.0.0.1", help = "Host to listen on")]
+host: String,
+
 #[arg(short, long, default_value = "8080", help = "Port to listen on")]
 port: u16, // allows values 0...65535
 

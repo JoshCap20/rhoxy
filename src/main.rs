@@ -11,6 +11,9 @@ use threadpool::ThreadPool;
 
 #[derive(Parser)]
 struct CommandLineArguments {
+    #[arg(long, default_value = "127.0.0.1", help = "Host to listen on")]
+    host: String,
+
     #[arg(short, long, default_value = "8080", help = "Port to listen on")]
     port: u16, // allows values 0...65535
 
@@ -34,15 +37,14 @@ fn main() {
             .init();
     }
 
-    if let Err(e) = start_server(args.port, args.threads) {
+    if let Err(e) = start_server(&args.host, args.port, args.threads) {
         error!("Server error: {}", e);
     }
 }
 
-fn start_server(port: u16, threads: Option<usize>) -> Result<()> {
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = TcpListener::bind(&addr)?;
-    info!("Server listening on {}", addr);
+fn start_server(host: &str, port: u16, threads: Option<usize>) -> Result<()> {
+    let listener = TcpListener::bind((host, port))?;
+    info!("Server listening on {}", listener.local_addr()?);
 
     let pool = ThreadPool::new(threads.unwrap_or_else(num_cpus::get));
     info!("Using thread pool with {} threads", pool.max_count());
