@@ -80,12 +80,13 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
 
     let method = Method::from_bytes(parts[0].as_bytes())
         .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
+    let url_string = parts[1];
 
     if method == Method::CONNECT {
-        return rhoxy::https::handle_connect_method(&mut stream, &mut reader, parts[1]);
+        return rhoxy::https::handle_connect_method(&mut stream, &mut reader, url_string);
     }
 
-    rhoxy::handle_http_request(&mut stream, &mut reader, method, parts)?;
+    rhoxy::handle_http_request(&mut stream, &mut reader, method, url_string)?;
 
     Ok(())
 }

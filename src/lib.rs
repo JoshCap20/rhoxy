@@ -39,9 +39,9 @@ pub fn handle_http_request(
     stream: &mut TcpStream,
     reader: &mut BufReader<TcpStream>,
     method: Method,
-    first_line: Vec<&str>,
+    url_string: &str,
 ) -> Result<()> {
-    let url = Url::parse(first_line[1]).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+    let url = Url::parse(url_string).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
 
     let headers = parser::parse_request_headers(reader)?;
 
