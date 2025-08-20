@@ -3,7 +3,7 @@ use clap::Parser;
 use http::Method;
 use log::{debug, error, info};
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufReader},
     net::{TcpListener, TcpStream},
     time::Duration,
 };
@@ -69,24 +69,11 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
 
-    let mut first_line = String::new();
-    reader.read_line(&mut first_line)?;
-    let first_line = first_line.trim();
-
-    let parts: Vec<&str> = first_line.split_whitespace().collect();
-    if parts.len() != 3 {
-        return Err(anyhow::anyhow!("Invalid request line: {}", first_line));
-    }
-
-    let method = Method::from_bytes(parts[0].as_bytes())
-        .map_err(|e| anyhow::anyhow!("Invalid method: {}", e))?;
-    let url_string = parts[1];
+    let (method, url_string) = rhoxy::extract_request_parts(&mut reader)?;
+    debug!("Received request: {} {}", method, url_string);
 
     if method == Method::CONNECT {
         return rhoxy::protocol::https::handle_connect_method(&mut stream, &mut reader, url_string);
     }
-
-    rhoxy::protocol::http::handle_http_request(&mut stream, &mut reader, method, url_string)?;
-
-    Ok(())
+    return rhoxy::protocol::http::handle_http_request(&mut stream, &mut reader, method, url_string);
 }

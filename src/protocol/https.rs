@@ -10,7 +10,7 @@ use std::{
 pub fn handle_connect_method(
     client_stream: &mut TcpStream,
     reader: &mut BufReader<TcpStream>,
-    target: &str,
+    target: String,
 ) -> Result<()> {
     loop {
         let mut line = String::new();
@@ -20,7 +20,7 @@ pub fn handle_connect_method(
         }
     }
 
-    let (host, port) = parse_host_port(target)?;
+    let (host, port) = parse_host_port(target.as_str())?;
 
     let target_stream = match TcpStream::connect(format!("{}:{}", host, port)) {
         Ok(stream) => stream,

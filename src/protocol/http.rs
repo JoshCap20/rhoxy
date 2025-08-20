@@ -1,6 +1,6 @@
 use anyhow::Result;
 use http::Method;
-use log::{debug, error};
+use log::{error};
 use reqwest::Url;
 use std::{
     collections::HashMap,
@@ -20,12 +20,11 @@ pub fn handle_http_request(
     stream: &mut TcpStream,
     reader: &mut BufReader<TcpStream>,
     method: Method,
-    url_string: &str,
+    url_string: String,
 ) -> Result<()> {
-    let url = Url::parse(url_string).map_err(|e| anyhow::anyhow!("Invalid URL: {}", e))?;
+    let url = Url::parse(url_string.as_str())?;
 
     let headers = parse_request_headers(reader)?;
-    debug!("Parsed headers: {:?}", headers);
 
     let content_length = headers
         .get("Content-Length")
