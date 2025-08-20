@@ -7,6 +7,7 @@ use std::{
     thread,
     time::Duration,
 };
+use threadpool::ThreadPool;
 
 #[derive(Parser)]
 struct CommandLineArguments {
@@ -23,20 +24,26 @@ fn main() {
 fn start_server(port: u16) -> Result<()> {
     let addr = format!("127.0.0.1:{}", port);
     let listener = TcpListener::bind(&addr)?;
-    println!("Server listening on {}", addr);
+    info!("Server listening on {}", addr);
+
+    let pool = ThreadPool::new(threads.unwrap_or_else(num_cpus::get));
+    info!("Using thread pool with {} threads", pool.max_count());
 
     for stream in listener.incoming() {
         let stream = stream?;
+        let peer_addr = stream.peer_addr()?;
 
-        println!("Connection from {}", stream.peer_addr()?);
-        // TODO: Handle with thread pool
-        thread::spawn(|| {
+        pool.execute(move || {
+            debug!("Connection from {}", peer_addr);
             if let Err(e) = handle_connection(stream) {
-                println!("Error handling connection: {}", e);
+                error!("Error handling {}: {}", peer_addr, e);
             }
-            println!("Connection closed");
+            debug!("Connection closed: {}", peer_addr);
         });
     }
+
+    pool.join();
+
     Ok(())
 }
 
