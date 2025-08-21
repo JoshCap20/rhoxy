@@ -2,36 +2,24 @@ use anyhow::Result;
 use clap::Parser;
 use http::Method;
 use log::{debug, error, info};
-use std::{
-    io::BufReader,
-    net::{TcpListener, TcpStream},
-    time::Duration,
-};
-use threadpool::ThreadPool;
+use tokio::io::{BufReader, BufWriter};
+use tokio::net::{TcpListener, TcpStream};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
 struct CommandLineArguments {
-    #[arg(long, default_value = "127.0.0.1", help = "Host to listen on")]
+    #[arg(long, default_value = "127.0.0.1", help = "Host to bind to")]
     host: String,
 
     #[arg(short, long, default_value = "8080", help = "Port to listen on")]
-    port: u16, // allows values 0...65535
-
-    #[arg(short, long, help = "Number of worker threads (default: CPU count)")]
-    threads: Option<usize>,
-
-    #[arg(
-        long,
-        default_value = "30",
-        help = "Read timeout for connections in seconds"
-    )]
-    read_timeout: Option<u64>,
+    port: u16,
 
     #[arg(long, help = "Enable debug logging")]
     verbose: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args = CommandLineArguments::parse();
 
     if args.verbose {
@@ -44,53 +32,46 @@ fn main() {
             .init();
     }
 
-    if let Err(e) = start_server(&args.host, args.port, args.threads, args.read_timeout) {
-        error!("Server error: {}", e);
-    }
+    start_server(&args.host, args.port).await
 }
 
-fn start_server(
-    host: &str,
-    port: u16,
-    threads: Option<usize>,
-    read_timeout: Option<u64>,
-) -> Result<()> {
-    let listener = TcpListener::bind((host, port))?;
+async fn start_server(host: &str, port: u16) -> Result<()> {
+    let listener = TcpListener::bind((host, port)).await?;
     info!("Server listening on {}", listener.local_addr()?);
 
-    let pool = ThreadPool::new(threads.unwrap_or_else(num_cpus::get));
-    info!("Using thread pool with {} threads", pool.max_count());
+    loop {
+        match listener.accept().await {
+            Ok((stream, peer_addr)) => {
+                debug!("Connection from {}", peer_addr);
 
-    for stream in listener.incoming() {
-        let stream = stream?;
-        let peer_addr = stream.peer_addr()?;
-
-        pool.execute(move || {
-            debug!("Connection from {}", peer_addr);
-            if let Err(e) = handle_connection(stream, read_timeout) {
-                error!("Error handling {}: {}", peer_addr, e);
+                tokio::spawn(async move {
+                    if let Err(e) = handle_connection(stream).await {
+                        error!("Error handling {}: {}", peer_addr, e);
+                    }
+                    debug!("Connection closed: {}", peer_addr);
+                });
             }
-            debug!("Connection closed: {}", peer_addr);
-        });
+            Err(e) => {
+                error!("Failed to accept connection: {}", e);
+            }
+        }
     }
-
-    pool.join();
-
-    Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream, read_timeout: Option<u64>) -> Result<()> {
-    stream.set_read_timeout(read_timeout.map(Duration::from_secs))?;
-    let mut reader = BufReader::new(stream.try_clone()?);
+async fn handle_connection(stream: TcpStream) -> Result<()> {
+    let (reader, writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut writer = BufWriter::new(writer);
 
-    let (method, url_string) = rhoxy::extract_request_parts(&mut reader)?;
+    let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
     debug!("Received request: {} {}", method, url_string);
 
-    if url_string == "/health" {
-        return rhoxy::handle_health_check(&mut stream);
+    if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
+        rhoxy::handle_health_check(&mut writer).await
+    } else if method == Method::CONNECT {
+        rhoxy::protocol::https::handle_connect_method(&mut writer, &mut reader, url_string).await
+    } else {
+        rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
+            .await
     }
-    if method == Method::CONNECT {
-        return rhoxy::protocol::https::handle_connect_method(&mut stream, &mut reader, url_string);
-    }
-    rhoxy::protocol::http::handle_http_request(&mut stream, &mut reader, method, url_string)
 }

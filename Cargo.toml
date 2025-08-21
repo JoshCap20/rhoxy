@@ -3,14 +3,13 @@ name = "rhoxy"
 version = "0.2.1"
 edition = "2024"
 license = "MIT"
-description = "A simple HTTP/HTTPS proxy in Rust."
+description = "A simple async HTTP/HTTPS proxy in Rust."
 
 [dependencies]
+tokio = { version = "1.0", features = ["full"] }
 clap = { version = "4.0", features = ["derive"] }
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12" }
 http = "1.3.1"
 anyhow = "1.0.99"
-threadpool = "1.8"
-num_cpus = "1.16"
 log = "0.4"
 env_logger = "0.10"

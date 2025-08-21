@@ -1,22 +1,23 @@
 use anyhow::Result;
-use log::{debug, error, warn};
-use std::{
-    io::{BufRead, BufReader, Read, Write},
-    net::TcpStream,
-    thread,
-    time::Duration,
-};
+use log::{debug, warn};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, copy};
+use tokio::join;
+use tokio::net::TcpStream;
 
 use crate::constants;
 
-pub fn handle_connect_method(
-    client_stream: &mut TcpStream,
-    reader: &mut BufReader<TcpStream>,
+pub async fn handle_connect_method<W, R>(
+    writer: &mut W,
+    reader: &mut R,
     target: String,
-) -> Result<()> {
+) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
+{
     loop {
         let mut line = String::new();
-        reader.read_line(&mut line)?;
+        reader.read_line(&mut line).await?;
         if line.trim().is_empty() {
             break;
         }
@@ -24,101 +25,55 @@ pub fn handle_connect_method(
 
     let (host, port) = parse_host_port(target.as_str())?;
 
-    let target_stream = match TcpStream::connect(format!("{}:{}", host, port)) {
+    let target_stream = match TcpStream::connect(format!("{}:{}", host, port)).await {
         Ok(stream) => stream,
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);
-            error!("{}", error_message);
-            write!(
-                client_stream,
-                "{}{}",
-                constants::BAD_GATEWAY_RESPONSE_HEADER,
-                error_message
-            )?;
-            client_stream.flush()?;
+            warn!("{}", error_message);
+            writer
+                .write_all(
+                    format!(
+                        "{}{}",
+                        constants::BAD_GATEWAY_RESPONSE_HEADER,
+                        error_message
+                    )
+                    .as_bytes(),
+                )
+                .await?;
+            writer.flush().await?;
             return Err(e.into());
         }
     };
 
-    write!(
-        client_stream,
-        "{}",
-        constants::CONNECTION_ESTABLISHED_RESPONSE
-    )?;
-    client_stream.flush()?;
+    writer
+        .write_all(constants::CONNECTION_ESTABLISHED_RESPONSE)
+        .await?;
+    writer.flush().await?;
     debug!("Tunnel established to {}", target);
 
-    tunnel_data(client_stream.try_clone()?, target_stream)?;
+    tunnel_data(writer, reader, target_stream).await?;
 
     Ok(())
 }
 
-fn tunnel_data(client_stream: TcpStream, target_stream: TcpStream) -> Result<()> {
-    let mut client_reader = client_stream.try_clone()?;
-    let mut client_writer = client_stream;
-    let mut target_reader = target_stream.try_clone()?;
-    let mut target_writer = target_stream;
+async fn tunnel_data<W, R>(
+    client_writer: &mut W,
+    client_reader: &mut R,
+    target_stream: TcpStream,
+) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
+{
+    let (mut target_reader, mut target_writer) = target_stream.into_split();
 
-    client_reader.set_read_timeout(Some(Duration::from_secs(60)))?;
-    target_reader.set_read_timeout(Some(Duration::from_secs(60)))?;
+    let (client_to_target, target_to_client) = join!(
+        copy(&mut *client_reader, &mut target_writer),
+        copy(&mut target_reader, &mut *client_writer)
+    );
 
-    let client_to_target = thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
-        loop {
-            match client_reader.read(&mut buffer) {
-                Ok(0) => {
-                    debug!("Client closed connection");
-                    break;
-                }
-                Ok(n) => {
-                    if let Err(e) = target_writer.write_all(&buffer[..n]) {
-                        warn!("Error writing to target: {}", e);
-                        break;
-                    }
-                    if let Err(e) = target_writer.flush() {
-                        warn!("Error flushing target: {}", e);
-                        break;
-                    }
-                }
-                Err(e) => {
-                    if !is_timeout_or_would_block(&e) {
-                        warn!("Error reading from client: {}", e);
-                    }
-                    break;
-                }
-            }
-        }
-        let _ = target_writer.shutdown(std::net::Shutdown::Both);
-    });
-
-    let mut buffer = [0u8; 8192];
-    loop {
-        match target_reader.read(&mut buffer) {
-            Ok(0) => {
-                debug!("Target closed connection");
-                break;
-            }
-            Ok(n) => {
-                if let Err(e) = client_writer.write_all(&buffer[..n]) {
-                    warn!("Error writing to client: {}", e);
-                    break;
-                }
-                if let Err(e) = client_writer.flush() {
-                    warn!("Error flushing client: {}", e);
-                    break;
-                }
-            }
-            Err(e) => {
-                if !is_timeout_or_would_block(&e) {
-                    warn!("Error reading from target: {}", e);
-                }
-                break;
-            }
-        }
-    }
-
-    let _ = client_writer.shutdown(std::net::Shutdown::Both);
-    let _ = client_to_target.join();
+    client_to_target?;
+    target_to_client?;
 
     debug!("Tunnel closed");
     Ok(())
@@ -136,13 +91,6 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
         }
         _ => Err(anyhow::anyhow!("Invalid target format: {}", target)),
     }
-}
-
-fn is_timeout_or_would_block(e: &std::io::Error) -> bool {
-    matches!(
-        e.kind(),
-        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-    )
 }
 
 #[cfg(test)]
@@ -228,30 +176,5 @@ mod tests {
         let result = parse_host_port("example.com:65535").unwrap();
         assert_eq!(result.0, "example.com");
         assert_eq!(result.1, 65535);
-    }
-
-    #[test]
-    fn test_is_timeout_or_would_block_timeout() {
-        let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
-        assert!(is_timeout_or_would_block(&error));
-    }
-
-    #[test]
-    fn test_is_timeout_or_would_block_would_block() {
-        let error = std::io::Error::new(std::io::ErrorKind::WouldBlock, "would block");
-        assert!(is_timeout_or_would_block(&error));
-    }
-
-    #[test]
-    fn test_is_timeout_or_would_block_other_error() {
-        let error =
-            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
-        assert!(!is_timeout_or_would_block(&error));
-    }
-
-    #[test]
-    fn test_is_timeout_or_would_block_permission_denied() {
-        let error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
-        assert!(!is_timeout_or_would_block(&error));
     }
 }
