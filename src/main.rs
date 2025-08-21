@@ -66,7 +66,7 @@ async fn handle_connection(stream: TcpStream) -> Result<()> {
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
     debug!("Received request: {} {}", method, url_string);
 
-    if url_string == "/health" {
+    if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
         rhoxy::handle_health_check(&mut writer).await
     } else if method == Method::CONNECT {
         rhoxy::protocol::https::handle_connect_method(&mut writer, &mut reader, url_string).await
