@@ -1,6 +1,6 @@
 use anyhow::Result;
 use http::Method;
-use log::error;
+use log::{debug, error};
 use reqwest::Url;
 use std::{
     collections::HashMap,
@@ -11,6 +11,7 @@ use std::{
 
 use crate::constants;
 
+#[derive(Debug)]
 struct HttpRequest {
     method: Method,
     url: Url,
@@ -41,8 +42,13 @@ pub fn handle_http_request(
         body,
     };
 
+    debug!("Received HTTP request: {:?}", request);
+
     match send_request(&request) {
-        Ok(response) => forward_response(stream, response)?,
+        Ok(response) => {
+            forward_response(stream, response)?;
+            debug!("Received HTTP response from {} for request: {:?}", request.url, request);
+        }
         Err(e) => {
             let error_message = format!("Failed to send request to {}: {}", request.url, e);
             error!("{}", error_message);
