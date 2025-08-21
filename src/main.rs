@@ -66,13 +66,12 @@ async fn handle_connection(stream: TcpStream) -> Result<()> {
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
     debug!("Received request: {} {}", method, url_string);
 
-    // if url_string == "/health" {
-    //     return rhoxy::handle_health_check(&mut reader, &mut writer).await;
-    // }
-    // if method == Method::CONNECT {
-    //     rhoxy::protocol::https::handle_connect_method(&mut reader, &mut writer, url_string).await
-    // } else {
-    rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
-        .await
-    // }
+    if url_string == "/health" {
+        rhoxy::handle_health_check(&mut writer).await
+    } else if method == Method::CONNECT {
+        rhoxy::protocol::https::handle_connect_method(&mut writer, &mut reader, url_string).await
+    } else {
+        rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
+            .await
+    }
 }
