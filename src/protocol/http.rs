@@ -46,12 +46,13 @@ pub fn handle_http_request(
 
     match send_request(&request) {
         Ok(response) => {
+            debug!("Forwarding response for request: {:?}", request);
             forward_response(stream, response)?;
-            debug!("Received HTTP response from {} for request: {:?}", request.url, request);
+            debug!("Forwarded HTTP response from {} for request: {:?}", request.url, request);
         }
         Err(e) => {
             let error_message = format!("Failed to send request to {}: {}", request.url, e);
-            error!("{}", error_message);
+            error!("HTTP request failed: {} (error kind: {:?})", error_message, e.source());
             write!(
                 stream,
                 "{}{}",
@@ -69,7 +70,6 @@ pub fn handle_http_request(
 fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
-        .danger_accept_invalid_certs(true) // for testing
         .no_proxy()
         .build()?;
 
