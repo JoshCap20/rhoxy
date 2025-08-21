@@ -45,7 +45,7 @@ where
     };
 
     writer
-        .write_all(format!("{}", constants::CONNECTION_ESTABLISHED_RESPONSE).as_bytes())
+        .write_all(constants::CONNECTION_ESTABLISHED_RESPONSE)
         .await?;
     writer.flush().await?;
     debug!("Tunnel established to {}", target);
