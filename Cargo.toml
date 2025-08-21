@@ -1,7 +1,9 @@
 [package]
 name = "rhoxy"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
+license = "MIT"
+description = "A simple HTTP/HTTPS proxy in Rust."
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
