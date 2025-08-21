@@ -144,3 +144,114 @@ fn is_timeout_or_would_block(e: &std::io::Error) -> bool {
         std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_host_port_with_port() {
+        let result = parse_host_port("example.com:8080").unwrap();
+        assert_eq!(result.0, "example.com");
+        assert_eq!(result.1, 8080);
+    }
+
+    #[test]
+    fn test_parse_host_port_without_port() {
+        let result = parse_host_port("example.com").unwrap();
+        assert_eq!(result.0, "example.com");
+        assert_eq!(result.1, 443);
+    }
+
+    #[test]
+    fn test_parse_host_port_localhost() {
+        let result = parse_host_port("localhost:3000").unwrap();
+        assert_eq!(result.0, "localhost");
+        assert_eq!(result.1, 3000);
+    }
+
+    #[test]
+    fn test_parse_host_port_ip_address() {
+        let result = parse_host_port("192.168.1.1:80").unwrap();
+        assert_eq!(result.0, "192.168.1.1");
+        assert_eq!(result.1, 80);
+    }
+
+    #[test]
+    fn test_parse_host_port_ipv6() {
+        // TODO: Fix this to support IPv6 addresses
+        let result = parse_host_port("[::1]:8080");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid target format")
+        );
+    }
+
+    #[test]
+    fn test_parse_host_port_invalid_port() {
+        let result = parse_host_port("example.com:invalid");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid port"));
+    }
+
+    #[test]
+    fn test_parse_host_port_port_out_of_range() {
+        let result = parse_host_port("example.com:65536");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid port"));
+    }
+
+    #[test]
+    fn test_parse_host_port_too_many_colons() {
+        let result = parse_host_port("example.com:8080:extra");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid target format")
+        );
+    }
+
+    #[test]
+    fn test_parse_host_port_zero_port() {
+        let result = parse_host_port("example.com:0").unwrap();
+        assert_eq!(result.0, "example.com");
+        assert_eq!(result.1, 0);
+    }
+
+    #[test]
+    fn test_parse_host_port_max_port() {
+        let result = parse_host_port("example.com:65535").unwrap();
+        assert_eq!(result.0, "example.com");
+        assert_eq!(result.1, 65535);
+    }
+
+    #[test]
+    fn test_is_timeout_or_would_block_timeout() {
+        let error = std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout");
+        assert!(is_timeout_or_would_block(&error));
+    }
+
+    #[test]
+    fn test_is_timeout_or_would_block_would_block() {
+        let error = std::io::Error::new(std::io::ErrorKind::WouldBlock, "would block");
+        assert!(is_timeout_or_would_block(&error));
+    }
+
+    #[test]
+    fn test_is_timeout_or_would_block_other_error() {
+        let error =
+            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
+        assert!(!is_timeout_or_would_block(&error));
+    }
+
+    #[test]
+    fn test_is_timeout_or_would_block_permission_denied() {
+        let error = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied");
+        assert!(!is_timeout_or_would_block(&error));
+    }
+}
