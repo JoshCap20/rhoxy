@@ -29,21 +29,24 @@ where
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);
             warn!("{}", error_message);
-            writer.write_all(
-                format!("{}{}",
-                constants::BAD_GATEWAY_RESPONSE_HEADER,
-                error_message)
+            writer
+                .write_all(
+                    format!(
+                        "{}{}",
+                        constants::BAD_GATEWAY_RESPONSE_HEADER,
+                        error_message
+                    )
                     .as_bytes(),
-            ).await?;
+                )
+                .await?;
             writer.flush().await?;
             return Err(e.into());
         }
     };
 
-    writer.write_all(format!(
-        "{}",
-        constants::CONNECTION_ESTABLISHED_RESPONSE
-    ).as_bytes()).await?;
+    writer
+        .write_all(format!("{}", constants::CONNECTION_ESTABLISHED_RESPONSE).as_bytes())
+        .await?;
     writer.flush().await?;
     debug!("Tunnel established to {}", target);
 
@@ -52,7 +55,11 @@ where
     Ok(())
 }
 
-async fn tunnel_data<W, R>(client_writer: &mut W, client_reader: &mut R, target_stream: TcpStream) -> Result<()>
+async fn tunnel_data<W, R>(
+    client_writer: &mut W,
+    client_reader: &mut R,
+    target_stream: TcpStream,
+) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,

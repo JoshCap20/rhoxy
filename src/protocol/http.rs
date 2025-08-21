@@ -120,11 +120,9 @@ where
     Ok(())
 }
 
-async fn parse_request_headers<R>(
-    reader: &mut R,
-) -> Result<HashMap<String, String>>
+async fn parse_request_headers<R>(reader: &mut R) -> Result<HashMap<String, String>>
 where
-    R: AsyncBufReadExt + Unpin
+    R: AsyncBufReadExt + Unpin,
 {
     let mut headers = HashMap::new();
     let mut line = String::new();
@@ -177,8 +175,8 @@ const fn http_version_to_string(version: http::Version) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::io::BufReader;
     use std::io::Cursor;
+    use tokio::io::BufReader;
 
     #[test]
     fn test_http_version_to_string() {

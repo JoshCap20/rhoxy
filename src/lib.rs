@@ -28,7 +28,7 @@ pub async fn handle_health_check<W>(writer: &mut W) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
 {
-    writer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK").await?;
+    writer.write_all(constants::HEALTH_CHECK_RESPONSE).await?;
     writer.flush().await?;
     Ok(())
 }
