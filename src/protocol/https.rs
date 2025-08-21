@@ -29,13 +29,22 @@ pub fn handle_connect_method(
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);
             error!("{}", error_message);
-            write!(client_stream, "{}{}", constants::BAD_GATEWAY_RESPONSE_HEADER, error_message)?;
+            write!(
+                client_stream,
+                "{}{}",
+                constants::BAD_GATEWAY_RESPONSE_HEADER,
+                error_message
+            )?;
             client_stream.flush()?;
             return Err(e.into());
         }
     };
 
-    write!(client_stream, "{}", constants::CONNECTION_ESTABLISHED_RESPONSE)?;
+    write!(
+        client_stream,
+        "{}",
+        constants::CONNECTION_ESTABLISHED_RESPONSE
+    )?;
     client_stream.flush()?;
     debug!("Tunnel established to {}", target);
 

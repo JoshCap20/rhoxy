@@ -1,6 +1,6 @@
 use anyhow::Result;
 use http::Method;
-use log::{error};
+use log::error;
 use reqwest::Url;
 use std::{
     collections::HashMap,
@@ -46,7 +46,12 @@ pub fn handle_http_request(
         Err(e) => {
             let error_message = format!("Failed to send request to {}: {}", request.url, e);
             error!("{}", error_message);
-            write!(stream, "{}{}", constants::BAD_GATEWAY_RESPONSE_HEADER, error_message)?;
+            write!(
+                stream,
+                "{}{}",
+                constants::BAD_GATEWAY_RESPONSE_HEADER,
+                error_message
+            )?;
             stream.flush()?;
             return Err(e);
         }
@@ -74,7 +79,7 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
 }
 
 fn forward_response(stream: &mut TcpStream, response: reqwest::blocking::Response) -> Result<()> {
-   write!(
+    write!(
         stream,
         "{} {} {}\r\n",
         http_version_to_string(response.version()),
@@ -133,8 +138,6 @@ const fn http_version_to_string(version: http::Version) -> &'static str {
         http::Version::HTTP_11 => "HTTP/1.1",
         http::Version::HTTP_2 => "HTTP/2.0",
         http::Version::HTTP_3 => "HTTP/3.0",
-        _ => {
-            "HTTP/1.1"
-        }
+        _ => "HTTP/1.1",
     }
 }
