@@ -48,11 +48,18 @@ pub fn handle_http_request(
         Ok(response) => {
             debug!("Forwarding response for request: {:?}", request);
             forward_response(stream, response)?;
-            debug!("Forwarded HTTP response from {} for request: {:?}", request.url, request);
+            debug!(
+                "Forwarded HTTP response from {} for request: {:?}",
+                request.url, request
+            );
         }
         Err(e) => {
             let error_message = format!("Failed to send request to {}: {}", request.url, e);
-            error!("HTTP request failed: {} (error kind: {:?})", error_message, e.source());
+            error!(
+                "HTTP request failed: {} (error kind: {:?})",
+                error_message,
+                e.source()
+            );
             write!(
                 stream,
                 "{}{}",
