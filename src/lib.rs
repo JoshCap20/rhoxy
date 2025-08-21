@@ -4,7 +4,6 @@ pub mod protocol;
 use anyhow::Result;
 use http::Method;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
 pub async fn extract_request_parts<R>(reader: &mut R) -> Result<(Method, String)>
 where
@@ -25,9 +24,12 @@ where
     Ok((method, url_string))
 }
 
-pub async fn handle_health_check(stream: &mut TcpStream) -> Result<()> {
-    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK").await?;
-    stream.flush().await?;
+pub async fn handle_health_check<W>(writer: &mut W) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+{
+    writer.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK").await?;
+    writer.flush().await?;
     Ok(())
 }
 
