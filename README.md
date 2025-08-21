@@ -18,6 +18,28 @@ port: u16, // allows values 0...65535
 #[arg(long, help = "Enable debug logging")]
 verbose: bool,
 ```
+## Install
+
+```bash
+cargo install rhoxy
+```
+**Running the above command will globally install the rhoxy binary.**
+
+### Install as library
+
+Run the following Cargo command in your project directory:
+
+```bash
+cargo add rhoxy
+```
+
+Or add the following line to your Cargo.toml:
+
+```
+rhoxy = "0.2.5"
+```
+
+### Source Install
 
 ### Development
 
