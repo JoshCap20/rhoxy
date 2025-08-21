@@ -1,6 +1,7 @@
 use anyhow::Result;
 use log::{debug, warn};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{copy, AsyncBufReadExt, AsyncWriteExt};
+use tokio::join;
 use tokio::net::TcpStream;
 
 use crate::constants;
@@ -66,9 +67,9 @@ where
 {
     let (mut target_reader, mut target_writer) = target_stream.into_split();
 
-    let (client_to_target, target_to_client) = tokio::join!(
-        tokio::io::copy(&mut *client_reader, &mut target_writer),
-        tokio::io::copy(&mut target_reader, &mut *client_writer)
+    let (client_to_target, target_to_client) = join!(
+        copy(&mut *client_reader, &mut target_writer),
+        copy(&mut target_reader, &mut *client_writer)
     );
 
     client_to_target?;
