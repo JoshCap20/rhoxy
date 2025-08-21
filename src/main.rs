@@ -20,7 +20,11 @@ struct CommandLineArguments {
     #[arg(short, long, help = "Number of worker threads (default: CPU count)")]
     threads: Option<usize>,
 
-    #[arg(long, default_value = "30", help = "Read timeout for connections in seconds")]
+    #[arg(
+        long,
+        default_value = "30",
+        help = "Read timeout for connections in seconds"
+    )]
     read_timeout: Option<u64>,
 
     #[arg(long, help = "Enable debug logging")]
@@ -45,7 +49,12 @@ fn main() {
     }
 }
 
-fn start_server(host: &str, port: u16, threads: Option<usize>, read_timeout: Option<u64>) -> Result<()> {
+fn start_server(
+    host: &str,
+    port: u16,
+    threads: Option<usize>,
+    read_timeout: Option<u64>,
+) -> Result<()> {
     let listener = TcpListener::bind((host, port))?;
     info!("Server listening on {}", listener.local_addr()?);
 
