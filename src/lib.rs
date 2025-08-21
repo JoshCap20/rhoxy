@@ -22,6 +22,12 @@ pub fn extract_request_parts(reader: &mut impl BufRead) -> Result<(Method, Strin
     Ok((method, url_string))
 }
 
+pub fn handle_health_check(stream: &mut impl std::io::Write) -> Result<()> {
+    write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")?;
+    stream.flush()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

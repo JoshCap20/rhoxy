@@ -86,6 +86,9 @@ fn handle_connection(mut stream: TcpStream, read_timeout: Option<u64>) -> Result
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader)?;
     debug!("Received request: {} {}", method, url_string);
 
+    if url_string == "/health" {
+        return rhoxy::handle_health_check(&mut stream);
+    }
     if method == Method::CONNECT {
         return rhoxy::protocol::https::handle_connect_method(&mut stream, &mut reader, url_string);
     }
