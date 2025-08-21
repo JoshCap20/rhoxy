@@ -2,12 +2,9 @@ use anyhow::Result;
 use http::Method;
 use log::{debug, error};
 use reqwest::Url;
-use std::{
-    collections::HashMap,
-    io::{BufRead, BufReader, Read, Write},
-    net::TcpStream,
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
 
 use crate::constants;
 
@@ -19,7 +16,7 @@ struct HttpRequest {
     body: Option<Vec<u8>>,
 }
 
-pub fn handle_http_request(
+pub async fn handle_http_request(
     stream: &mut TcpStream,
     reader: &mut BufReader<TcpStream>,
     method: Method,
@@ -27,13 +24,13 @@ pub fn handle_http_request(
 ) -> Result<()> {
     let url = Url::parse(url_string.as_str())?;
 
-    let headers = parse_request_headers(reader)?;
+    let headers = parse_request_headers(reader).await?;
 
     let content_length = headers
         .get("Content-Length")
         .and_then(|s| s.parse::<usize>().ok());
 
-    let body = parse_request_body(reader, content_length)?;
+    let body = parse_request_body(reader, content_length).await?;
 
     let request = HttpRequest {
         method,
@@ -44,10 +41,10 @@ pub fn handle_http_request(
 
     debug!("Received HTTP request: {:?}", request);
 
-    match send_request(&request) {
+    match send_request(&request).await {
         Ok(response) => {
             debug!("Forwarding response for request: {:?}", request);
-            forward_response(stream, response)?;
+            forward_response(stream, response).await?;
             debug!(
                 "Forwarded HTTP response from {} for request: {:?}",
                 request.url, request
@@ -60,13 +57,17 @@ pub fn handle_http_request(
                 error_message,
                 e.source()
             );
-            write!(
-                stream,
-                "{}{}",
-                constants::BAD_GATEWAY_RESPONSE_HEADER,
-                error_message
-            )?;
-            stream.flush()?;
+            stream
+                .write_all(
+                    format!(
+                        "{}{}",
+                        constants::BAD_GATEWAY_RESPONSE_HEADER,
+                        error_message
+                    )
+                    .as_bytes(),
+                )
+                .await?;
+            stream.flush().await?;
             return Err(e);
         }
     }
@@ -74,8 +75,8 @@ pub fn handle_http_request(
     Ok(())
 }
 
-fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
-    let client = reqwest::blocking::Client::builder()
+async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
+    let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .no_proxy()
         .build()?;
@@ -87,35 +88,41 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     if let Some(body) = &request.body {
         req = req.body(body.clone());
     }
-    let response = req.send()?;
+    let response = req.send().await?;
     Ok(response)
 }
 
-fn forward_response(stream: &mut TcpStream, response: reqwest::blocking::Response) -> Result<()> {
-    write!(
-        stream,
+async fn forward_response(stream: &mut TcpStream, response: reqwest::Response) -> Result<()> {
+    let status_line = format!(
         "{} {} {}\r\n",
         http_version_to_string(response.version()),
         response.status().as_u16(),
         response.status().canonical_reason().unwrap_or("")
-    )?;
+    );
+    stream.write_all(status_line.as_bytes()).await?;
 
     for (key, value) in response.headers().iter() {
-        write!(stream, "{}: {}\r\n", key, value.to_str().unwrap_or(""))?;
+        let header_line = format!("{}: {}\r\n", key, value.to_str().unwrap_or(""));
+        stream.write_all(header_line.as_bytes()).await?;
     }
-    write!(stream, "\r\n")?;
+    stream.write_all(b"\r\n").await?;
 
-    stream.write_all(&response.bytes()?)?;
-    stream.flush()?;
+    let body = response.bytes().await?;
+    stream.write_all(&body).await?;
+    stream.flush().await?;
 
     Ok(())
 }
 
-fn parse_request_headers(reader: &mut impl BufRead) -> Result<HashMap<String, String>> {
+async fn parse_request_headers(
+    reader: &mut BufReader<TcpStream>,
+) -> Result<HashMap<String, String>> {
     let mut headers = HashMap::new();
+    let mut line = String::new();
+
     loop {
-        let mut line = String::new();
-        reader.read_line(&mut line)?;
+        line.clear();
+        reader.read_line(&mut line).await?;
         let line = line.trim();
 
         if line.is_empty() {
@@ -131,13 +138,13 @@ fn parse_request_headers(reader: &mut impl BufRead) -> Result<HashMap<String, St
     Ok(headers)
 }
 
-fn parse_request_body(
-    reader: &mut impl Read,
+async fn parse_request_body(
+    reader: &mut BufReader<TcpStream>,
     content_length: Option<usize>,
 ) -> Result<Option<Vec<u8>>> {
     if let Some(length) = content_length {
         let mut body = vec![0; length];
-        reader.read_exact(&mut body)?;
+        reader.read_exact(&mut body).await?;
         Ok(Some(body))
     } else {
         Ok(None)
