@@ -1,6 +1,6 @@
 use anyhow::Result;
 use log::{debug, warn};
-use tokio::io::{copy, AsyncBufReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, copy};
 use tokio::join;
 use tokio::net::TcpStream;
 
