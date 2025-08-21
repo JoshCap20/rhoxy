@@ -20,6 +20,9 @@ struct CommandLineArguments {
     #[arg(short, long, help = "Number of worker threads (default: CPU count)")]
     threads: Option<usize>,
 
+    #[arg(long, default_value = "30", help = "Read timeout for connections in seconds")]
+    read_timeout: Option<u64>,
+
     #[arg(long, help = "Enable debug logging")]
     verbose: bool,
 }
@@ -37,12 +40,12 @@ fn main() {
             .init();
     }
 
-    if let Err(e) = start_server(&args.host, args.port, args.threads) {
+    if let Err(e) = start_server(&args.host, args.port, args.threads, args.read_timeout) {
         error!("Server error: {}", e);
     }
 }
 
-fn start_server(host: &str, port: u16, threads: Option<usize>) -> Result<()> {
+fn start_server(host: &str, port: u16, threads: Option<usize>, read_timeout: Option<u64>) -> Result<()> {
     let listener = TcpListener::bind((host, port))?;
     info!("Server listening on {}", listener.local_addr()?);
 
@@ -55,7 +58,7 @@ fn start_server(host: &str, port: u16, threads: Option<usize>) -> Result<()> {
 
         pool.execute(move || {
             debug!("Connection from {}", peer_addr);
-            if let Err(e) = handle_connection(stream) {
+            if let Err(e) = handle_connection(stream, read_timeout) {
                 error!("Error handling {}: {}", peer_addr, e);
             }
             debug!("Connection closed: {}", peer_addr);
@@ -67,8 +70,8 @@ fn start_server(host: &str, port: u16, threads: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+fn handle_connection(mut stream: TcpStream, read_timeout: Option<u64>) -> Result<()> {
+    stream.set_read_timeout(read_timeout.map(Duration::from_secs))?;
     let mut reader = BufReader::new(stream.try_clone()?);
 
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader)?;
