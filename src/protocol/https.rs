@@ -26,18 +26,20 @@ pub fn handle_connect_method(
         Ok(stream) => stream,
         Err(e) => {
             error!("Failed to connect to target: {}", e);
-            let error_response = format!(
-                "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to {}: {}",
+            write!(
+                client_stream,
+                "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to {}: {}\r\n",
                 target, e
-            );
-            client_stream.write_all(error_response.as_bytes())?;
+            )?;
             client_stream.flush()?;
             return Err(e.into());
         }
     };
 
-    let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-    client_stream.write_all(response.as_bytes())?;
+    write!(
+        client_stream,
+        "HTTP/1.1 200 Connection Established\r\n\r\n"
+    )?;
     client_stream.flush()?;
     debug!("Tunnel established to {}", target);
 
