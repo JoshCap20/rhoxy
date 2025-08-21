@@ -9,6 +9,8 @@ use std::{
     time::Duration,
 };
 
+use crate::constants;
+
 struct HttpRequest {
     method: Method,
     url: Url,
@@ -42,9 +44,9 @@ pub fn handle_http_request(
     match send_request(&request) {
         Ok(response) => forward_response(stream, response)?,
         Err(e) => {
-            error!("Failed to send request: {}", e);
-            let error_response = format!("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy error: {}", e);
-            stream.write_all(error_response.as_bytes())?;
+            let error_message = format!("Failed to send request to {}: {}", request.url, e);
+            error!("{}", error_message);
+            write!(stream, "{}{}", constants::BAD_GATEWAY_RESPONSE_HEADER, error_message)?;
             stream.flush()?;
             return Err(e);
         }
@@ -124,7 +126,7 @@ fn parse_request_body(
     }
 }
 
-fn http_version_to_string(version: http::Version) -> &'static str {
+const fn http_version_to_string(version: http::Version) -> &'static str {
     match version {
         http::Version::HTTP_09 => "HTTP/0.9",
         http::Version::HTTP_10 => "HTTP/1.0",
@@ -132,7 +134,6 @@ fn http_version_to_string(version: http::Version) -> &'static str {
         http::Version::HTTP_2 => "HTTP/2.0",
         http::Version::HTTP_3 => "HTTP/3.0",
         _ => {
-            log::warn!("Unknown HTTP version: {:?}", version);
             "HTTP/1.1"
         }
     }
