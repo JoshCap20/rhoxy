@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error, warn};
+use log::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -28,7 +28,7 @@ where
         Ok(stream) => stream,
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);
-            error!("{}", error_message);
+            warn!("{}", error_message);
             writer.write_all(
                 format!("{}{}",
                 constants::BAD_GATEWAY_RESPONSE_HEADER,
