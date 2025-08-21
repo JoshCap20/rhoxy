@@ -37,3 +37,7 @@ cargo build --release
 cargo install --path .
 rhoxy --port 8080
 ```
+
+### TODO
+- Handle IPv6 properly
+- MITM proxy mode
