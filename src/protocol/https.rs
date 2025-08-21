@@ -182,7 +182,12 @@ mod tests {
         // TODO: Fix this to support IPv6 addresses
         let result = parse_host_port("[::1]:8080");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid target format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid target format")
+        );
     }
 
     #[test]
@@ -203,7 +208,12 @@ mod tests {
     fn test_parse_host_port_too_many_colons() {
         let result = parse_host_port("example.com:8080:extra");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid target format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid target format")
+        );
     }
 
     #[test]
@@ -234,7 +244,8 @@ mod tests {
 
     #[test]
     fn test_is_timeout_or_would_block_other_error() {
-        let error = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
+        let error =
+            std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "connection refused");
         assert!(!is_timeout_or_would_block(&error));
     }
 

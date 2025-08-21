@@ -31,7 +31,7 @@ mod tests {
     fn test_extract_request_parts_valid_get() {
         let request = "GET /path HTTP/1.1\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0, Method::GET);
         assert_eq!(result.1, "/path");
@@ -41,7 +41,7 @@ mod tests {
     fn test_extract_request_parts_valid_post() {
         let request = "POST /api/users HTTP/1.1\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0, Method::POST);
         assert_eq!(result.1, "/api/users");
@@ -51,7 +51,7 @@ mod tests {
     fn test_extract_request_parts_valid_connect() {
         let request = "CONNECT example.com:443 HTTP/1.1\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0, Method::CONNECT);
         assert_eq!(result.1, "example.com:443");
@@ -61,7 +61,7 @@ mod tests {
     fn test_extract_request_parts_full_url() {
         let request = "GET https://example.com/path HTTP/1.1\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0, Method::GET);
         assert_eq!(result.1, "https://example.com/path");
@@ -71,7 +71,7 @@ mod tests {
     fn test_extract_request_parts_allows_unstandard_methods() {
         let request = "INVALID /path HTTP/1.1\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0.as_str(), "INVALID");
         assert_eq!(result.1, "/path");
@@ -81,37 +81,52 @@ mod tests {
     fn test_extract_request_parts_too_few_parts() {
         let request = "GET /path\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid request line"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid request line")
+        );
     }
 
     #[test]
     fn test_extract_request_parts_too_many_parts() {
         let request = "GET /path HTTP/1.1 extra\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid request line"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid request line")
+        );
     }
 
     #[test]
     fn test_extract_request_parts_empty_line() {
         let request = "\r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid request line"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid request line")
+        );
     }
 
     #[test]
     fn test_extract_request_parts_whitespace_handling() {
         let request = "  GET   /path   HTTP/1.1  \r\n";
         let mut reader = Cursor::new(request);
-        
+
         let result = extract_request_parts(&mut reader).unwrap();
         assert_eq!(result.0, Method::GET);
         assert_eq!(result.1, "/path");
