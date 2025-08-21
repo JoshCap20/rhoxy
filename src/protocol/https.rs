@@ -7,6 +7,8 @@ use std::{
     time::Duration,
 };
 
+use crate::constants;
+
 pub fn handle_connect_method(
     client_stream: &mut TcpStream,
     reader: &mut BufReader<TcpStream>,
@@ -25,19 +27,24 @@ pub fn handle_connect_method(
     let target_stream = match TcpStream::connect(format!("{}:{}", host, port)) {
         Ok(stream) => stream,
         Err(e) => {
-            error!("Failed to connect to target: {}", e);
-            let error_response = format!(
-                "HTTP/1.1 502 Bad Gateway\r\n\r\nFailed to connect to {}: {}",
-                target, e
-            );
-            client_stream.write_all(error_response.as_bytes())?;
+            let error_message = format!("Failed to connect to {}: {}", target, e);
+            error!("{}", error_message);
+            write!(
+                client_stream,
+                "{}{}",
+                constants::BAD_GATEWAY_RESPONSE_HEADER,
+                error_message
+            )?;
             client_stream.flush()?;
             return Err(e.into());
         }
     };
 
-    let response = "HTTP/1.1 200 Connection Established\r\n\r\n";
-    client_stream.write_all(response.as_bytes())?;
+    write!(
+        client_stream,
+        "{}",
+        constants::CONNECTION_ESTABLISHED_RESPONSE
+    )?;
     client_stream.flush()?;
     debug!("Tunnel established to {}", target);
 

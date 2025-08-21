@@ -1,6 +1,6 @@
 use anyhow::Result;
 use http::Method;
-use log::{error};
+use log::error;
 use reqwest::Url;
 use std::{
     collections::HashMap,
@@ -8,6 +8,8 @@ use std::{
     net::TcpStream,
     time::Duration,
 };
+
+use crate::constants;
 
 struct HttpRequest {
     method: Method,
@@ -42,9 +44,14 @@ pub fn handle_http_request(
     match send_request(&request) {
         Ok(response) => forward_response(stream, response)?,
         Err(e) => {
-            error!("Failed to send request: {}", e);
-            let error_response = format!("HTTP/1.1 502 Bad Gateway\r\n\r\nProxy error: {}", e);
-            stream.write_all(error_response.as_bytes())?;
+            let error_message = format!("Failed to send request to {}: {}", request.url, e);
+            error!("{}", error_message);
+            write!(
+                stream,
+                "{}{}",
+                constants::BAD_GATEWAY_RESPONSE_HEADER,
+                error_message
+            )?;
             stream.flush()?;
             return Err(e);
         }
@@ -71,25 +78,21 @@ fn send_request(request: &HttpRequest) -> Result<reqwest::blocking::Response> {
     Ok(response)
 }
 
-fn forward_response(stream: &mut TcpStream, res: reqwest::blocking::Response) -> Result<()> {
-    let mut response = format!(
-        "HTTP/1.1 {} {}\r\n",
-        res.status().as_u16(),
-        res.status().canonical_reason().unwrap_or("")
-    );
+fn forward_response(stream: &mut TcpStream, response: reqwest::blocking::Response) -> Result<()> {
+    write!(
+        stream,
+        "{} {} {}\r\n",
+        http_version_to_string(response.version()),
+        response.status().as_u16(),
+        response.status().canonical_reason().unwrap_or("")
+    )?;
 
-    for (key, value) in res.headers() {
-        let key_str = key.as_str();
-        if key_str != "connection" && key_str != "transfer-encoding" {
-            response.push_str(&format!("{}: {}\r\n", key, value.to_str().unwrap_or("")));
-        }
+    for (key, value) in response.headers().iter() {
+        write!(stream, "{}: {}\r\n", key, value.to_str().unwrap_or(""))?;
     }
-    response.push_str("\r\n");
+    write!(stream, "\r\n")?;
 
-    stream.write_all(response.as_bytes())?;
-
-    let body_bytes = res.bytes()?;
-    stream.write_all(&body_bytes)?;
+    stream.write_all(&response.bytes()?)?;
     stream.flush()?;
 
     Ok(())
@@ -125,5 +128,16 @@ fn parse_request_body(
         Ok(Some(body))
     } else {
         Ok(None)
+    }
+}
+
+const fn http_version_to_string(version: http::Version) -> &'static str {
+    match version {
+        http::Version::HTTP_09 => "HTTP/0.9",
+        http::Version::HTTP_10 => "HTTP/1.0",
+        http::Version::HTTP_11 => "HTTP/1.1",
+        http::Version::HTTP_2 => "HTTP/2.0",
+        http::Version::HTTP_3 => "HTTP/3.0",
+        _ => "HTTP/1.1",
     }
 }
