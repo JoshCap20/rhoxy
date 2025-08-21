@@ -3,7 +3,7 @@ use http::Method;
 use log::{debug, error};
 use reqwest::Url;
 use std::{collections::HashMap, time::Duration};
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use crate::constants;
@@ -16,12 +16,15 @@ struct HttpRequest {
     body: Option<Vec<u8>>,
 }
 
-pub async fn handle_http_request(
+pub async fn handle_http_request<R>(
     stream: &mut TcpStream,
-    reader: &mut BufReader<TcpStream>,
+    reader: &mut R,
     method: Method,
     url_string: String,
-) -> Result<()> {
+) -> Result<()>
+where
+    R: AsyncReadExt + Unpin + AsyncBufRead,
+{
     let url = Url::parse(url_string.as_str())?;
 
     let headers = parse_request_headers(reader).await?;
@@ -114,9 +117,12 @@ async fn forward_response(stream: &mut TcpStream, response: reqwest::Response) -
     Ok(())
 }
 
-async fn parse_request_headers(
-    reader: &mut BufReader<TcpStream>,
-) -> Result<HashMap<String, String>> {
+async fn parse_request_headers<R>(
+    reader: &mut R,
+) -> Result<HashMap<String, String>>
+where
+    R: AsyncBufReadExt + Unpin + AsyncBufRead
+{
     let mut headers = HashMap::new();
     let mut line = String::new();
 
@@ -138,10 +144,13 @@ async fn parse_request_headers(
     Ok(headers)
 }
 
-async fn parse_request_body(
-    reader: &mut BufReader<TcpStream>,
+async fn parse_request_body<R>(
+    reader: &mut R,
     content_length: Option<usize>,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<Option<Vec<u8>>>
+where
+    R: AsyncReadExt + Unpin,
+{
     if let Some(length) = content_length {
         let mut body = vec![0; length];
         reader.read_exact(&mut body).await?;
@@ -165,6 +174,7 @@ const fn http_version_to_string(version: http::Version) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::BufReader;
     use std::io::Cursor;
 
     #[test]
@@ -176,74 +186,74 @@ mod tests {
         assert_eq!(http_version_to_string(http::Version::HTTP_3), "HTTP/3.0");
     }
 
-    #[test]
-    fn test_parse_request_body_with_content_length() {
+    #[tokio::test]
+    async fn test_parse_request_body_with_content_length() {
         let body_data = b"test body content";
-        let mut reader = Cursor::new(body_data);
+        let mut reader = BufReader::new(Cursor::new(body_data));
 
-        let result = parse_request_body(&mut reader, Some(17)).unwrap();
+        let result = parse_request_body(&mut reader, Some(17)).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap(), body_data);
     }
 
-    #[test]
-    fn test_parse_request_body_no_content_length() {
+    #[tokio::test]
+    async fn test_parse_request_body_no_content_length() {
         let body_data = b"test body content";
-        let mut reader = Cursor::new(body_data);
+        let mut reader = BufReader::new(Cursor::new(body_data));
 
-        let result = parse_request_body(&mut reader, None).unwrap();
+        let result = parse_request_body(&mut reader, None).await.unwrap();
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_parse_request_body_zero_length() {
+    #[tokio::test]
+    async fn test_parse_request_body_zero_length() {
         let body_data = b"";
-        let mut reader = Cursor::new(body_data);
+        let mut reader = BufReader::new(Cursor::new(body_data));
 
-        let result = parse_request_body(&mut reader, Some(0)).unwrap();
+        let result = parse_request_body(&mut reader, Some(0)).await.unwrap();
         assert!(result.is_some());
         assert_eq!(result.unwrap(), Vec::<u8>::new());
     }
 
-    #[test]
-    fn test_parse_request_headers_valid() {
+    #[tokio::test]
+    async fn test_parse_request_headers_valid() {
         let headers_data =
             "Host: example.com\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader).unwrap();
+        let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result.get("Host").unwrap(), "example.com");
         assert_eq!(result.get("Content-Type").unwrap(), "application/json");
         assert_eq!(result.get("Content-Length").unwrap(), "100");
     }
 
-    #[test]
-    fn test_parse_request_headers_empty() {
+    #[tokio::test]
+    async fn test_parse_request_headers_empty() {
         let headers_data = "\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader).unwrap();
+        let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.len(), 0);
     }
 
-    #[test]
-    fn test_parse_request_headers_whitespace_handling() {
+    #[tokio::test]
+    async fn test_parse_request_headers_whitespace_handling() {
         let headers_data =
             "  Host  :  example.com  \r\n  Content-Type  :  application/json  \r\n\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader).unwrap();
+        let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.get("Host").unwrap(), "example.com");
         assert_eq!(result.get("Content-Type").unwrap(), "application/json");
     }
 
-    #[test]
-    fn test_parse_request_headers_invalid_format() {
+    #[tokio::test]
+    async fn test_parse_request_headers_invalid_format() {
         let headers_data = "Invalid header line without colon\r\n\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader);
+        let result = parse_request_headers(&mut reader).await;
         assert!(result.is_err());
         assert!(
             result
@@ -253,24 +263,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_parse_request_headers_colon_in_value() {
+    #[tokio::test]
+    async fn test_parse_request_headers_colon_in_value() {
         let headers_data = "Authorization: Bearer token:with:colons\r\n\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader).unwrap();
+        let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(
             result.get("Authorization").unwrap(),
             "Bearer token:with:colons"
         );
     }
 
-    #[test]
-    fn test_parse_request_headers_empty_value() {
+    #[tokio::test]
+    async fn test_parse_request_headers_empty_value() {
         let headers_data = "Empty-Header:\r\n\r\n";
-        let mut reader = Cursor::new(headers_data);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
 
-        let result = parse_request_headers(&mut reader).unwrap();
+        let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.get("Empty-Header").unwrap(), "");
     }
 }
