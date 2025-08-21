@@ -3,8 +3,7 @@ use http::Method;
 use log::{debug, error};
 use reqwest::Url;
 use std::{collections::HashMap, time::Duration};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 use crate::constants;
 
@@ -16,14 +15,15 @@ struct HttpRequest {
     body: Option<Vec<u8>>,
 }
 
-pub async fn handle_http_request<R>(
-    stream: &mut TcpStream,
+pub async fn handle_http_request<S, R>(
+    stream: &mut S,
     reader: &mut R,
     method: Method,
     url_string: String,
 ) -> Result<()>
 where
-    R: AsyncReadExt + Unpin + AsyncBufRead,
+    S: AsyncWriteExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
 {
     let url = Url::parse(url_string.as_str())?;
 
@@ -95,7 +95,10 @@ async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
     Ok(response)
 }
 
-async fn forward_response(stream: &mut TcpStream, response: reqwest::Response) -> Result<()> {
+async fn forward_response<S>(stream: &mut S, response: reqwest::Response) -> Result<()>
+where
+    S: AsyncWriteExt + Unpin,
+{
     let status_line = format!(
         "{} {} {}\r\n",
         http_version_to_string(response.version()),
@@ -121,7 +124,7 @@ async fn parse_request_headers<R>(
     reader: &mut R,
 ) -> Result<HashMap<String, String>>
 where
-    R: AsyncBufReadExt + Unpin + AsyncBufRead
+    R: AsyncBufReadExt + Unpin
 {
     let mut headers = HashMap::new();
     let mut line = String::new();

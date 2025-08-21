@@ -2,13 +2,13 @@ use anyhow::Result;
 use clap::Parser;
 use http::Method;
 use log::{debug, error, info};
-use tokio::io::BufReader;
+use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct CommandLineArguments {
-    #[arg(short, long, default_value = "127.0.0.1", help = "Host to bind to")]
+    #[arg(long, default_value = "127.0.0.1", help = "Host to bind to")]
     host: String,
 
     #[arg(short, long, default_value = "8080", help = "Port to listen on")]
@@ -58,19 +58,21 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     }
 }
 
-async fn handle_connection(mut stream: TcpStream) -> Result<()> {
-    let mut reader = BufReader::new(&mut stream);
+async fn handle_connection(stream: TcpStream) -> Result<()> {
+    let (reader, writer) = stream.into_split();
+    let mut reader = BufReader::new(reader);
+    let mut writer = BufWriter::new(writer);
 
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
     debug!("Received request: {} {}", method, url_string);
 
-    if url_string == "/health" {
-        return rhoxy::handle_health_check(&mut stream).await;
-    }
-    if method == Method::CONNECT {
-        rhoxy::protocol::https::handle_connect_method(&mut stream, &mut reader, url_string).await
-    } else {
-        rhoxy::protocol::http::handle_http_request(&mut stream, &mut reader, method, url_string)
-            .await
-    }
+    // if url_string == "/health" {
+    //     return rhoxy::handle_health_check(&mut reader, &mut writer).await;
+    // }
+    // if method == Method::CONNECT {
+    //     rhoxy::protocol::https::handle_connect_method(&mut reader, &mut writer, url_string).await
+    // } else {
+    rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
+        .await
+    // }
 }
