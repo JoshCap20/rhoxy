@@ -1,5 +1,6 @@
 # rhoxy - Rust HTTP/HTTPS Proxy
-[![Tests](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml/badge.svg)](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml)
+[![Tests](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml)
+[![Publish](https://github.com/JoshCap20/rhoxy/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/JoshCap20/rhoxy/actions/workflows/deploy.yml)
 
 Simple HTTP/HTTPS proxy in Rust (my inaugural rust project)
 
