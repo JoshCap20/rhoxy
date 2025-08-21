@@ -57,5 +57,4 @@ rhoxy --port 8080
 ```
 
 ### TODO
-- Handle IPv6 properly
 - MITM proxy mode

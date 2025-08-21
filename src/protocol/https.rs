@@ -80,16 +80,38 @@ where
 }
 
 fn parse_host_port(target: &str) -> Result<(String, u16)> {
-    let parts: Vec<&str> = target.split(':').collect();
-    match parts.len() {
-        1 => Ok((parts[0].to_string(), 443)),
-        2 => {
-            let port = parts[1]
+    // IPv6
+    if target.starts_with('[') {
+        if let Some(bracket_end) = target.find("]:") {
+            let host = target[1..bracket_end].to_string();
+            let port_str = &target[bracket_end + 2..];
+            let port = port_str
                 .parse::<u16>()
-                .map_err(|_| anyhow::anyhow!("Invalid port: {}", parts[1]))?;
-            Ok((parts[0].to_string(), port))
+                .map_err(|_| anyhow::anyhow!("Invalid port: {}", port_str))?;
+            return Ok((host, port));
+        } else if target.ends_with(']') {
+            let host = target[1..target.len() - 1].to_string();
+            return Ok((host, 443));
+        } else {
+            return Err(anyhow::anyhow!("Invalid IPv6 format: {}", target));
         }
-        _ => Err(anyhow::anyhow!("Invalid target format: {}", target)),
+    }
+
+    // IPv6 without port or IPv4 with port
+    if let Some(colon_pos) = target.rfind(':') {
+        let colon_count = target.matches(':').count();
+        if colon_count > 1 {
+            return Ok((target.to_string(), 443));
+        }
+
+        let host = target[..colon_pos].to_string();
+        let port_str = &target[colon_pos + 1..];
+        let port = port_str
+            .parse::<u16>()
+            .map_err(|_| anyhow::anyhow!("Invalid port: {}", port_str))?;
+        Ok((host, port))
+    } else {
+        Ok((target.to_string(), 443))
     }
 }
 
@@ -127,15 +149,9 @@ mod tests {
 
     #[test]
     fn test_parse_host_port_ipv6() {
-        // TODO: Fix this to support IPv6 addresses
-        let result = parse_host_port("[::1]:8080");
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid target format")
-        );
+        let result = parse_host_port("[::1]:8080").unwrap();
+        assert_eq!(result.0, "::1");
+        assert_eq!(result.1, 8080);
     }
 
     #[test]
@@ -153,14 +169,42 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_host_port_too_many_colons() {
-        let result = parse_host_port("example.com:8080:extra");
+    fn test_parse_host_port_ipv6_with_brackets_and_port() {
+        let result = parse_host_port("[2001:db8::1]:8080").unwrap();
+        assert_eq!(result.0, "2001:db8::1");
+        assert_eq!(result.1, 8080);
+    }
+
+    #[test]
+    fn test_parse_host_port_ipv6_with_brackets_no_port() {
+        let result = parse_host_port("[2001:db8::1]").unwrap();
+        assert_eq!(result.0, "2001:db8::1");
+        assert_eq!(result.1, 443);
+    }
+
+    #[test]
+    fn test_parse_host_port_ipv6_without_brackets() {
+        let result = parse_host_port("2001:db8::1").unwrap();
+        assert_eq!(result.0, "2001:db8::1");
+        assert_eq!(result.1, 443);
+    }
+
+    #[test]
+    fn test_parse_host_port_ipv6_localhost() {
+        let result = parse_host_port("[::1]:3000").unwrap();
+        assert_eq!(result.0, "::1");
+        assert_eq!(result.1, 3000);
+    }
+
+    #[test]
+    fn test_parse_host_port_invalid_ipv6_brackets() {
+        let result = parse_host_port("[2001:db8::1:invalid");
         assert!(result.is_err());
         assert!(
             result
                 .unwrap_err()
                 .to_string()
-                .contains("Invalid target format")
+                .contains("Invalid IPv6 format")
         );
     }
 
