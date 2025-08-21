@@ -23,10 +23,10 @@ verbose: bool,
 ### Development
 
 ```bash
-# listen on port 8081 with 20 worker threads and debug logging
+# listen on port 8081 on host 127.0.0.1 with 20 worker threads and debug logging
 cargo run -- --port 8081 --threads 20 --verbose
 
-# use defaults (port 8080, CPU thread count, no verbose)
+# use defaults (port 8080, CPU thread count, no verbose, host 127.0.0.1)
 cargo run --
 ```
 
