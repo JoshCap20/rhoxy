@@ -15,14 +15,14 @@ struct HttpRequest {
     body: Option<Vec<u8>>,
 }
 
-pub async fn handle_http_request<S, R>(
-    stream: &mut S,
+pub async fn handle_http_request<W, R>(
+    writer: &mut W,
     reader: &mut R,
     method: Method,
     url_string: String,
 ) -> Result<()>
 where
-    S: AsyncWriteExt + Unpin,
+    W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,
 {
     let url = Url::parse(url_string.as_str())?;
@@ -47,7 +47,7 @@ where
     match send_request(&request).await {
         Ok(response) => {
             debug!("Forwarding response for request: {:?}", request);
-            forward_response(stream, response).await?;
+            forward_response(writer, response).await?;
             debug!(
                 "Forwarded HTTP response from {} for request: {:?}",
                 request.url, request
@@ -60,7 +60,7 @@ where
                 error_message,
                 e.source()
             );
-            stream
+            writer
                 .write_all(
                     format!(
                         "{}{}",
@@ -70,7 +70,7 @@ where
                     .as_bytes(),
                 )
                 .await?;
-            stream.flush().await?;
+            writer.flush().await?;
             return Err(e);
         }
     }
@@ -95,9 +95,9 @@ async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
     Ok(response)
 }
 
-async fn forward_response<S>(stream: &mut S, response: reqwest::Response) -> Result<()>
+async fn forward_response<W>(writer: &mut W, response: reqwest::Response) -> Result<()>
 where
-    S: AsyncWriteExt + Unpin,
+    W: AsyncWriteExt + Unpin,
 {
     let status_line = format!(
         "{} {} {}\r\n",
@@ -105,17 +105,17 @@ where
         response.status().as_u16(),
         response.status().canonical_reason().unwrap_or("")
     );
-    stream.write_all(status_line.as_bytes()).await?;
+    writer.write_all(status_line.as_bytes()).await?;
 
     for (key, value) in response.headers().iter() {
         let header_line = format!("{}: {}\r\n", key, value.to_str().unwrap_or(""));
-        stream.write_all(header_line.as_bytes()).await?;
+        writer.write_all(header_line.as_bytes()).await?;
     }
-    stream.write_all(b"\r\n").await?;
+    writer.write_all(b"\r\n").await?;
 
     let body = response.bytes().await?;
-    stream.write_all(&body).await?;
-    stream.flush().await?;
+    writer.write_all(&body).await?;
+    writer.flush().await?;
 
     Ok(())
 }
