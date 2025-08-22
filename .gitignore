@@ -1,3 +1,6 @@
-target/*
+*.pem
+*.key
+*.crt
 
+target/*
 .vscode/*
