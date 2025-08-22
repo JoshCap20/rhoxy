@@ -1,16 +1,12 @@
 use anyhow::Result;
-use log::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, copy};
 use tokio::join;
 use tokio::net::TcpStream;
+use tracing::{debug, warn};
 
 use crate::constants;
 
-pub async fn handle_connect_method<W, R>(
-    writer: &mut W,
-    reader: &mut R,
-    target: String,
-) -> Result<()>
+pub async fn handle_request<W, R>(writer: &mut W, reader: &mut R, target: String) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,
@@ -24,6 +20,7 @@ where
     }
 
     let (host, port) = parse_host_port(target.as_str())?;
+    debug!("Establishing HTTPS connection to {}:{}", host, port);
 
     let target_stream = match TcpStream::connect(format!("{}:{}", host, port)).await {
         Ok(stream) => stream,
@@ -31,14 +28,7 @@ where
             let error_message = format!("Failed to connect to {}: {}", target, e);
             warn!("{}", error_message);
             writer
-                .write_all(
-                    format!(
-                        "{}{}",
-                        constants::BAD_GATEWAY_RESPONSE_HEADER,
-                        error_message
-                    )
-                    .as_bytes(),
-                )
+                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
             return Err(e.into());

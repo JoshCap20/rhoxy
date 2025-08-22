@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use http::Method;
-use log::{debug, error, info};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tracing::{debug, error, info};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -23,12 +22,12 @@ async fn main() -> Result<()> {
     let args = CommandLineArguments::parse();
 
     if args.verbose {
-        env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Debug)
+        tracing_subscriber::fmt()
+            .with_env_filter("rhoxy=debug")
             .init();
     } else {
-        env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Info)
+        tracing_subscriber::fmt()
+            .with_env_filter("rhoxy=info")
             .init();
     }
 
@@ -45,7 +44,7 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
                 debug!("Connection from {}", peer_addr);
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream).await {
+                    if let Err(e) = handle_connection(stream, peer_addr).await {
                         error!("Error handling {}: {}", peer_addr, e);
                     }
                     debug!("Connection closed: {}", peer_addr);
@@ -58,20 +57,28 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     }
 }
 
-async fn handle_connection(stream: TcpStream) -> Result<()> {
+async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -> Result<()> {
     let (reader, writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
-    debug!("Received request: {} {}", method, url_string);
+
+    let protocol = rhoxy::protocol::Protocol::get_protocol_from_method(&method).await;
+
+    info!("[{}][{peer_addr}] {url_string}", protocol.to_string().await);
 
     if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
-        rhoxy::handle_health_check(&mut writer).await
-    } else if method == Method::CONNECT {
-        rhoxy::protocol::https::handle_connect_method(&mut writer, &mut reader, url_string).await
-    } else {
-        rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
-            .await
+        return rhoxy::handle_health_check(&mut writer).await;
     }
+
+    protocol
+        .handle_request(&mut writer, &mut reader, method, url_string)
+        .await
+        .map_err(|e| {
+            error!("Error handling request: {}", e);
+            e
+        })?;
+
+    Ok(())
 }
