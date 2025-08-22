@@ -1,9 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 use http::Method;
-use log::{debug, error, info};
+use tracing::{info, debug, error};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tracing_subscriber;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -23,12 +24,12 @@ async fn main() -> Result<()> {
     let args = CommandLineArguments::parse();
 
     if args.verbose {
-        env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Debug)
+        tracing_subscriber::fmt()
+          .with_env_filter("rhoxy=debug")
             .init();
     } else {
-        env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Info)
+        tracing_subscriber::fmt()
+          .with_env_filter("rhoxy=info")
             .init();
     }
 

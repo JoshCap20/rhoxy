@@ -57,4 +57,6 @@ rhoxy --port 8080
 ```
 
 ### TODO
-- MITM proxy mode
+- Authentication
+- Access logging
+- Rate limiting

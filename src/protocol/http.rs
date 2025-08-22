@@ -1,6 +1,6 @@
 use anyhow::Result;
 use http::Method;
-use log::{debug, error};
+use tracing::{debug, error};
 use reqwest::Url;
 use std::{collections::HashMap, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
