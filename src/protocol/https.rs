@@ -6,7 +6,7 @@ use tokio::net::TcpStream;
 
 use crate::constants;
 
-pub async fn handle_connect_method<W, R>(
+pub async fn handle_request<W, R>(
     writer: &mut W,
     reader: &mut R,
     target: String,

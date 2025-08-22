@@ -26,11 +26,11 @@ async fn main() -> Result<()> {
     if args.verbose {
         tracing_subscriber::fmt()
           .with_env_filter("rhoxy=debug")
-            .init();
+          .init();
     } else {
         tracing_subscriber::fmt()
           .with_env_filter("rhoxy=info")
-            .init();
+          .init();
     }
 
     start_server(&args.host, args.port).await
@@ -46,7 +46,7 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
                 debug!("Connection from {}", peer_addr);
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream).await {
+                    if let Err(e) = handle_connection(stream, peer_addr).await {
                         error!("Error handling {}: {}", peer_addr, e);
                     }
                     debug!("Connection closed: {}", peer_addr);
@@ -59,20 +59,22 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     }
 }
 
-async fn handle_connection(stream: TcpStream) -> Result<()> {
+async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -> Result<()> {
     let (reader, writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
     let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
-    debug!("Received request: {} {}", method, url_string);
+
+    let is_https = method == Method::CONNECT;
+    info!("[{method}][{peer_addr}] {url_string}");
 
     if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
         rhoxy::handle_health_check(&mut writer).await
-    } else if method == Method::CONNECT {
-        rhoxy::protocol::https::handle_connect_method(&mut writer, &mut reader, url_string).await
+    } else if is_https {
+        rhoxy::protocol::https::handle_request(&mut writer, &mut reader, url_string).await
     } else {
-        rhoxy::protocol::http::handle_http_request(&mut writer, &mut reader, method, url_string)
+        rhoxy::protocol::http::handle_request(&mut writer, &mut reader, method, url_string)
             .await
     }
 }

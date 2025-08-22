@@ -15,7 +15,7 @@ struct HttpRequest {
     body: Option<Vec<u8>>,
 }
 
-pub async fn handle_http_request<W, R>(
+pub async fn handle_request<W, R>(
     writer: &mut W,
     reader: &mut R,
     method: Method,
