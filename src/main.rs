@@ -66,7 +66,7 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
 
     let protocol = rhoxy::protocol::Protocol::get_protocol_from_method(&method);
 
-    info!("[{peer_addr}::{}] {url_string}", protocol.to_string());
+    info!("[{peer_addr}::{}] {url_string}", protocol.display());
 
     if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
         return rhoxy::handle_health_check(&mut writer).await;

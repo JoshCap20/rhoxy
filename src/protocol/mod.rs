@@ -28,7 +28,7 @@ impl Protocol {
         }
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn display(&self) -> String {
         match self {
             Protocol::Http => "HTTP".to_string(),
             Protocol::Https => "HTTPS".to_string(),
