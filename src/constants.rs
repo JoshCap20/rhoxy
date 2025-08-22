@@ -1,5 +1,5 @@
-pub const BAD_GATEWAY_RESPONSE_HEADER: &str =
-    "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\n";
+pub const BAD_GATEWAY_RESPONSE_HEADER: &[u8] =
+    b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\n";
 pub const CONNECTION_ESTABLISHED_RESPONSE: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 
 pub const HEALTH_ENDPOINT_PATH: &str = "/health";
