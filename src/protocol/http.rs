@@ -25,33 +25,23 @@ where
     W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,
 {
-    let url = Url::parse(url_string.as_str())?;
-
     let headers = parse_request_headers(reader).await?;
 
-    let content_length = headers
-        .get("Content-Length")
-        .and_then(|s| s.parse::<usize>().ok());
-
-    let body = parse_request_body(reader, content_length).await?;
+    let body = extract_request_body(reader, &headers).await?;
 
     let request = HttpRequest {
         method,
-        url,
+        url: Url::parse(&url_string)?,
         headers,
         body,
     };
 
     debug!("Received HTTP request: {:?}", request);
 
-    match send_request(&request).await {
+    let client_to_target = match send_request(&request).await {
         Ok(response) => {
             debug!("Forwarding response for request: {:?}", request);
-            forward_response(writer, response).await?;
-            debug!(
-                "Forwarded HTTP response from {} for request: {:?}",
-                request.url, request
-            );
+            response
         }
         Err(e) => {
             let error_message = format!("Failed to send request to {}: {}", request.url, e);
@@ -61,21 +51,39 @@ where
                 e.source()
             );
             writer
-                .write_all(
-                    format!(
-                        "{}{}",
-                        constants::BAD_GATEWAY_RESPONSE_HEADER,
-                        error_message
-                    )
-                    .as_bytes(),
-                )
+                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
             return Err(e);
         }
-    }
+    };
+
+    match forward_response(writer, client_to_target).await {
+        Ok(_) => {
+            debug!("Forwarded response for request: {:?}", request);
+        }
+        Err(e) => {
+            error!("Failed to forward response: {}", e);
+            writer
+                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
+                .await?;
+            writer.flush().await?;
+            return Err(e);
+        }
+    };
 
     Ok(())
+}
+
+async fn extract_request_body<R>(reader: &mut R, headers: &HashMap<String, String>) -> Result<Option<Vec<u8>>, anyhow::Error>
+where
+    R: AsyncReadExt + Unpin,
+{
+    let content_length = headers
+        .get("Content-Length")
+        .and_then(|s| s.parse::<usize>().ok());
+    let body = parse_request_body(reader, content_length).await?;
+    Ok(body)
 }
 
 async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
