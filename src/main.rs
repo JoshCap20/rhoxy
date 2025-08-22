@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -41,13 +41,13 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     loop {
         match listener.accept().await {
             Ok((stream, peer_addr)) => {
-                debug!("Connection from {}", peer_addr);
+                debug!("[{peer_addr}] Connection established");
 
                 tokio::spawn(async move {
                     if let Err(e) = handle_connection(stream, peer_addr).await {
-                        error!("Error handling {}: {}", peer_addr, e);
+                        error!("[{peer_addr}] Error handling request: {}", e);
                     }
-                    debug!("Connection closed: {}", peer_addr);
+                    debug!("[{peer_addr}] Connection closed");
                 });
             }
             Err(e) => {
@@ -66,7 +66,7 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
 
     let protocol = rhoxy::protocol::Protocol::get_protocol_from_method(&method).await;
 
-    info!("[{}][{peer_addr}] {url_string}", protocol.to_string().await);
+    info!("[{peer_addr}::{}] {url_string}", protocol.to_string().await);
 
     if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
         return rhoxy::handle_health_check(&mut writer).await;
@@ -74,11 +74,7 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
 
     protocol
         .handle_request(&mut writer, &mut reader, method, url_string)
-        .await
-        .map_err(|e| {
-            error!("Error handling request: {}", e);
-            e
-        })?;
+        .await?;
 
     Ok(())
 }
