@@ -7,6 +7,21 @@ use tracing::{debug, error};
 
 use crate::constants;
 
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .pool_max_idle_per_host(20)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .tcp_keepalive(Duration::from_secs(60))
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true)
+        .no_proxy()
+        .build()
+        .expect("Failed to build HTTP client")
+});
+
 #[derive(Debug)]
 struct HttpRequest {
     method: Method,
@@ -90,12 +105,8 @@ where
 }
 
 async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .no_proxy()
-        .build()?;
+    let mut req = HTTP_CLIENT.request(request.method.clone(), request.url.clone());
 
-    let mut req = client.request(request.method.clone(), request.url.clone());
     for (key, value) in &request.headers {
         req = req.header(key, value);
     }
