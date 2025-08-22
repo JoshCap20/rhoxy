@@ -1,9 +1,9 @@
 use anyhow::Result;
 use http::Method;
-use tracing::{debug, error};
 use reqwest::Url;
 use std::{collections::HashMap, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use tracing::{debug, error};
 
 use crate::constants;
 
@@ -75,7 +75,10 @@ where
     Ok(())
 }
 
-async fn extract_request_body<R>(reader: &mut R, headers: &HashMap<String, String>) -> Result<Option<Vec<u8>>, anyhow::Error>
+async fn extract_request_body<R>(
+    reader: &mut R,
+    headers: &HashMap<String, String>,
+) -> Result<Option<Vec<u8>>, anyhow::Error>
 where
     R: AsyncReadExt + Unpin,
 {

@@ -1,8 +1,8 @@
 pub mod http;
 pub mod https;
 
-use anyhow::Result;
 use ::http::Method;
+use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 pub enum Protocol {

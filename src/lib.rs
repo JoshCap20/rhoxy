@@ -1,8 +1,8 @@
 pub mod constants;
 pub mod protocol;
 
-use anyhow::Result;
 use ::http::Method;
+use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 pub async fn extract_request_parts<R>(reader: &mut R) -> Result<(Method, String)>

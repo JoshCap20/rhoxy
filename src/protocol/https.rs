@@ -1,16 +1,12 @@
 use anyhow::Result;
-use tracing::{debug, warn};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, copy};
 use tokio::join;
 use tokio::net::TcpStream;
+use tracing::{debug, warn};
 
 use crate::constants;
 
-pub async fn handle_request<W, R>(
-    writer: &mut W,
-    reader: &mut R,
-    target: String,
-) -> Result<()>
+pub async fn handle_request<W, R>(writer: &mut W, reader: &mut R, target: String) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,
