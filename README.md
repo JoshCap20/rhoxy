@@ -36,7 +36,7 @@ cargo add rhoxy
 Or add the following line to your Cargo.toml:
 
 ```
-rhoxy = "0.2.5"
+rhoxy = "0.2.6"
 ```
 
 ### Source Install

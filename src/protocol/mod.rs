@@ -28,14 +28,14 @@ impl Protocol {
         }
     }
 
-    pub async fn to_string(&self) -> String {
+    pub fn display(&self) -> String {
         match self {
             Protocol::Http => "HTTP".to_string(),
             Protocol::Https => "HTTPS".to_string(),
         }
     }
 
-    pub async fn get_protocol_from_method(method: &Method) -> Self {
+    pub fn get_protocol_from_method(method: &Method) -> Self {
         if method == Method::CONNECT {
             Protocol::Https
         } else {

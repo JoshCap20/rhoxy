@@ -1,11 +1,26 @@
 use anyhow::Result;
 use http::Method;
 use reqwest::Url;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::LazyLock, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error};
 
 use crate::constants;
+
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .pool_max_idle_per_host(20)
+        .pool_idle_timeout(Duration::from_secs(90))
+        .tcp_keepalive(Duration::from_secs(60))
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .http2_keep_alive_timeout(Duration::from_secs(10))
+        .http2_keep_alive_while_idle(true)
+        .no_proxy()
+        .build()
+        .expect("Failed to build HTTP client")
+});
 
 #[derive(Debug)]
 struct HttpRequest {
@@ -90,18 +105,19 @@ where
 }
 
 async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .no_proxy()
-        .build()?;
+    let mut req = HTTP_CLIENT.request(request.method.clone(), request.url.clone());
 
-    let mut req = client.request(request.method.clone(), request.url.clone());
     for (key, value) in &request.headers {
-        req = req.header(key, value);
+        let key_lower = key.to_lowercase();
+        if !is_hop_by_hop_header(&key_lower) {
+            req = req.header(key, value);
+        }
     }
+
     if let Some(body) = &request.body {
         req = req.body(body.clone());
     }
+
     let response = req.send().await?;
     Ok(response)
 }
@@ -181,6 +197,20 @@ const fn http_version_to_string(version: http::Version) -> &'static str {
         http::Version::HTTP_3 => "HTTP/3.0",
         _ => "HTTP/1.1",
     }
+}
+
+fn is_hop_by_hop_header(header: &str) -> bool {
+    matches!(
+        header,
+        "connection"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailers"
+            | "transfer-encoding"
+            | "upgrade"
+    )
 }
 
 #[cfg(test)]
