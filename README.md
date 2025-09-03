@@ -18,6 +18,11 @@ port: u16, // allows values 0...65535
 #[arg(long, help = "Enable debug logging")]
 verbose: bool,
 ```
+
+Once installed and built, run `rhoxy --port 8081` to run the HTTP/HTTPS proxy locally on port 8081. 
+
+If you were using mac, you would enable system usage in the wifi settings with `localhost` or `127.0.0.1` and port `8081` to serve traffic through this proxy.
+
 ## Install
 
 ```bash
