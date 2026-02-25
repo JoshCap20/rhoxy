@@ -31,6 +31,20 @@ where
     Ok((method, url_string))
 }
 
+pub fn is_health_check(url: &str) -> bool {
+    if url == constants::HEALTH_ENDPOINT_PATH {
+        return true;
+    }
+    // For absolute URLs like http://host:port/health, extract the path
+    if let Some(scheme_end) = url.find("://") {
+        let after_authority = &url[scheme_end + 3..];
+        if let Some(path_start) = after_authority.find('/') {
+            return &after_authority[path_start..] == constants::HEALTH_ENDPOINT_PATH;
+        }
+    }
+    false
+}
+
 pub async fn handle_health_check<W>(writer: &mut W) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
@@ -138,6 +152,25 @@ mod tests {
                 .to_string()
                 .contains("Invalid request line")
         );
+    }
+
+    #[test]
+    fn test_is_health_check_matches_relative_path() {
+        assert!(is_health_check("/health"));
+    }
+
+    #[test]
+    fn test_is_health_check_matches_absolute_url() {
+        assert!(is_health_check("http://localhost:8080/health"));
+        assert!(is_health_check("http://127.0.0.1:8081/health"));
+        assert!(is_health_check("http://proxy.example.com/health"));
+    }
+
+    #[test]
+    fn test_is_health_check_rejects_non_health() {
+        assert!(!is_health_check("/other"));
+        assert!(!is_health_check("http://example.com/api"));
+        assert!(!is_health_check("/healthcheck"));
     }
 
     #[tokio::test]

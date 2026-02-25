@@ -86,7 +86,7 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
 
     info!("[{peer_addr}::{protocol}] {url_string}");
 
-    if url_string == rhoxy::constants::HEALTH_ENDPOINT_PATH {
+    if rhoxy::is_health_check(&url_string) {
         return rhoxy::handle_health_check(&mut writer).await;
     }
 
