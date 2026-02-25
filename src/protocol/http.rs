@@ -17,6 +17,7 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .http2_keep_alive_interval(Duration::from_secs(30))
         .http2_keep_alive_timeout(Duration::from_secs(10))
         .http2_keep_alive_while_idle(true)
+        .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .build()
         .expect("Failed to build HTTP client")
@@ -216,8 +217,11 @@ fn is_hop_by_hop_header(header: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http::Method;
+    use reqwest::Url;
+    use std::collections::HashMap;
     use std::io::Cursor;
-    use tokio::io::BufReader;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
     #[test]
     fn test_http_version_to_string() {
@@ -324,5 +328,32 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.get("Empty-Header").unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn test_send_request_does_not_follow_redirects() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = stream.read(&mut buf).await;
+            let response =
+                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/nowhere\r\nContent-Length: 0\r\n\r\n";
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let request = HttpRequest {
+            method: Method::GET,
+            url: Url::parse(&format!("http://{}/test", addr)).unwrap(),
+            headers: HashMap::new(),
+            body: None,
+        };
+
+        let response = send_request(&request)
+            .await
+            .expect("Proxy should return redirect response directly, not follow it");
+        assert_eq!(response.status().as_u16(), 302);
     }
 }
