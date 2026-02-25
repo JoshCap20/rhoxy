@@ -5,7 +5,7 @@ use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-pub async fn read_line_bounded<R>(reader: &mut R, buf: &mut String, max_len: usize) -> Result<usize>
+pub async fn read_line_bounded<R>(reader: &mut R, buf: &mut String, max_len: usize) -> Result<()>
 where
     R: AsyncBufReadExt + Unpin,
 {
@@ -27,7 +27,6 @@ where
             }
             bytes.extend_from_slice(&available[..to_consume]);
             reader.consume(to_consume);
-            total += to_consume;
             break;
         }
 
@@ -44,7 +43,7 @@ where
     }
 
     *buf = String::from_utf8(bytes).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
-    Ok(total)
+    Ok(())
 }
 
 pub async fn extract_request_parts<R>(reader: &mut R) -> Result<(Method, String)>
@@ -316,9 +315,8 @@ mod tests {
         let data = "hello world\n";
         let mut reader = Cursor::new(data);
         let mut buf = String::new();
-        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
         assert_eq!(buf, "hello world\n");
-        assert_eq!(bytes, 12);
     }
 
     #[tokio::test]
@@ -357,9 +355,8 @@ mod tests {
         let data = "no newline";
         let mut reader = Cursor::new(data);
         let mut buf = String::new();
-        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
         assert_eq!(buf, "no newline");
-        assert_eq!(bytes, 10);
     }
 
     #[tokio::test]
