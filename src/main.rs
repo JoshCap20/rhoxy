@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -44,6 +45,7 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     let semaphore = Arc::new(Semaphore::new(rhoxy::constants::MAX_CONCURRENT_CONNECTIONS));
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
+    let mut tasks = JoinSet::new();
 
     loop {
         tokio::select! {
@@ -61,7 +63,7 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
 
                         debug!("[{peer_addr}] Connection established");
 
-                        tokio::spawn(async move {
+                        tasks.spawn(async move {
                             let _permit = permit;
                             let timeout = Duration::from_secs(rhoxy::constants::CONNECTION_TIMEOUT_SECS);
                             match tokio::time::timeout(timeout, handle_connection(stream, peer_addr)).await {
@@ -78,11 +80,14 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
                 }
             }
             _ = &mut shutdown => {
-                info!("Shutdown signal received, stopping server");
+                info!("Shutdown signal received, draining {} in-flight connections", tasks.len());
                 break;
             }
         }
     }
+
+    while tasks.join_next().await.is_some() {}
+    info!("All connections drained, server stopped");
 
     Ok(())
 }
