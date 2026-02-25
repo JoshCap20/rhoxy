@@ -221,12 +221,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[tokio::test]
@@ -236,12 +234,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[tokio::test]
@@ -251,12 +247,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[test]
