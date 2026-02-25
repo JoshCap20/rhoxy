@@ -11,3 +11,4 @@ pub const MAX_CONCURRENT_CONNECTIONS: usize = 1024;
 pub const MAX_REQUEST_LINE_LEN: usize = 8192;
 pub const MAX_HEADER_LINE_LEN: usize = 8192;
 pub const MAX_HEADER_COUNT: usize = 100;
+pub const MAX_BODY_SIZE: usize = 10 * 1024 * 1024; // 10 MiB

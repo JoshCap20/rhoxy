@@ -207,6 +207,13 @@ where
     R: AsyncReadExt + Unpin,
 {
     if let Some(length) = content_length {
+        if length > constants::MAX_BODY_SIZE {
+            return Err(anyhow::anyhow!(
+                "Content-Length {} exceeds maximum body size of {} bytes",
+                length,
+                constants::MAX_BODY_SIZE
+            ));
+        }
         let mut body = vec![0; length];
         reader.read_exact(&mut body).await?;
         Ok(Some(body))
@@ -234,6 +241,13 @@ where
             crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN)
                 .await?;
             break;
+        }
+
+        if body.len() + size > constants::MAX_BODY_SIZE {
+            return Err(anyhow::anyhow!(
+                "Chunked body exceeds maximum size of {} bytes",
+                constants::MAX_BODY_SIZE
+            ));
         }
 
         let mut chunk = vec![0u8; size];
@@ -504,5 +518,29 @@ mod tests {
             .await
             .expect("Proxy should return redirect response directly, not follow it");
         assert_eq!(response.status().as_u16(), 302);
+    }
+
+    #[tokio::test]
+    async fn test_parse_chunked_body_rejects_oversized() {
+        // Create chunks that together exceed MAX_BODY_SIZE
+        let chunk_size = constants::MAX_BODY_SIZE / 2 + 1;
+        let chunk_data = "A".repeat(chunk_size);
+        let chunked = format!(
+            "{:x}\r\n{}\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            chunk_size, chunk_data, chunk_size, chunk_data
+        );
+        let mut reader = BufReader::new(Cursor::new(chunked));
+
+        let result = parse_chunked_body(&mut reader).await;
+        assert!(result.is_err(), "Should reject chunked body exceeding MAX_BODY_SIZE");
+    }
+
+    #[tokio::test]
+    async fn test_parse_request_body_rejects_oversized_content_length() {
+        let body = vec![0u8; constants::MAX_BODY_SIZE + 1];
+        let mut reader = BufReader::new(Cursor::new(body));
+
+        let result = parse_request_body(&mut reader, Some(constants::MAX_BODY_SIZE + 1)).await;
+        assert!(result.is_err(), "Should reject body exceeding MAX_BODY_SIZE");
     }
 }
