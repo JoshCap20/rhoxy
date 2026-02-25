@@ -170,8 +170,10 @@ where
     }
     writer.write_all(b"\r\n").await?;
 
-    let body = response.bytes().await?;
-    writer.write_all(&body).await?;
+    let mut response = response;
+    while let Some(chunk) = response.chunk().await? {
+        writer.write_all(&chunk).await?;
+    }
     writer.flush().await?;
 
     Ok(())
