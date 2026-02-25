@@ -132,6 +132,9 @@ pub async fn resolve_and_verify_non_private(
 }
 
 pub fn is_health_check(url: &str) -> bool {
+    // Strip query string if present
+    let url = url.split('?').next().unwrap_or(url);
+
     if url == constants::HEALTH_ENDPOINT_PATH {
         return true;
     }
@@ -271,6 +274,12 @@ mod tests {
         assert!(!is_health_check("/other"));
         assert!(!is_health_check("http://example.com/api"));
         assert!(!is_health_check("/healthcheck"));
+    }
+
+    #[test]
+    fn test_is_health_check_with_query_string() {
+        assert!(is_health_check("/health?foo=bar"));
+        assert!(is_health_check("http://localhost:8080/health?check=1"));
     }
 
     #[tokio::test]
