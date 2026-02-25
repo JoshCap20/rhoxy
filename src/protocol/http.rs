@@ -54,7 +54,7 @@ where
                 .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
                 .await?;
             writer.flush().await?;
-            return Err(anyhow::anyhow!("Request to private address blocked: {}", url_string));
+            return Ok(());
         }
     }
 
@@ -542,5 +542,25 @@ mod tests {
 
         let result = parse_request_body(&mut reader, Some(constants::MAX_BODY_SIZE + 1)).await;
         assert!(result.is_err(), "Should reject body exceeding MAX_BODY_SIZE");
+    }
+
+    #[tokio::test]
+    async fn test_handle_request_ssrf_block_returns_ok() {
+        // Request to a private address should send 403 and return Ok, not Err
+        let request_data = "Host: 127.0.0.1\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(request_data));
+        let mut writer = Vec::new();
+
+        let result = handle_request(
+            &mut writer,
+            &mut reader,
+            Method::GET,
+            "http://127.0.0.1/secret".to_string(),
+        )
+        .await;
+
+        assert!(result.is_ok(), "SSRF block should return Ok after sending 403");
+        let response = String::from_utf8_lossy(&writer);
+        assert!(response.contains("403 Forbidden"));
     }
 }
