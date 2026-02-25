@@ -101,6 +101,7 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
         Ok(parts) => parts,
         Err(e) => {
             warn!("[{peer_addr}] Malformed request: {e}");
+            // Best-effort response — client may have already disconnected.
             let _ = writer
                 .write_all(rhoxy::constants::BAD_REQUEST_RESPONSE)
                 .await;
