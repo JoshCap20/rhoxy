@@ -1,67 +1,98 @@
-# rhoxy - Rust HTTP/HTTPS Proxy
+# rhoxy
+
 [![Tests](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/JoshCap20/rhoxy/actions/workflows/test.yml)
 [![Publish](https://github.com/JoshCap20/rhoxy/actions/workflows/deploy.yml/badge.svg)](https://github.com/JoshCap20/rhoxy/actions/workflows/deploy.yml)
+[![Crates.io](https://img.shields.io/crates/v/rhoxy.svg)](https://crates.io/crates/rhoxy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An async HTTP/HTTPS proxy in Rust
+An async HTTP/HTTPS forward proxy built with Rust, Tokio, and reqwest.
 
-## Running
+## Features
 
-Arguments:
+- **HTTP forwarding** — Parses client requests, forwards to upstream servers via a static `reqwest` connection pool, and streams responses back
+- **HTTPS tunneling** — Handles `CONNECT` requests with bidirectional `tokio::io::copy` tunneling
+- **SSRF protection** — Blocks requests to private/loopback addresses with DNS rebinding detection
+- **DoS mitigation** — Bounded line reads, body size limits (10 MiB), header count limits, connection concurrency cap (1024), and per-connection timeouts
+- **Graceful shutdown** — Drains in-flight connections on `Ctrl-C` before exiting
+- **Health endpoint** — Responds to `/health` requests directed at the proxy
+
+## Usage
 
 ```
-#[arg(long, default_value = "127.0.0.1", help = "Host to listen on")]
-host: String,
+rhoxy [OPTIONS]
 
-#[arg(short, long, default_value = "8080", help = "Port to listen on")]
-port: u16, // allows values 0...65535
-
-#[arg(long, help = "Enable debug logging")]
-verbose: bool,
+Options:
+      --host <HOST>  Host to bind to [default: 127.0.0.1]
+  -p, --port <PORT>  Port to listen on [default: 8080]
+      --verbose      Enable debug logging
+  -h, --help         Print help
+  -V, --version      Print version
 ```
 
-Once installed and built, run `rhoxy --port 8081` to run the HTTP/HTTPS proxy locally on port 8081. 
+### Quick start
 
-If you were using mac, you would enable system usage in the wifi settings with `localhost` or `127.0.0.1` and port `8081` to serve traffic through this proxy.
+```bash
+# Start proxy on port 8081 with debug logging
+rhoxy --port 8081 --verbose
 
-## Install
+# Test with curl
+curl -x http://127.0.0.1:8081 http://httpbin.org/ip
+curl -x http://127.0.0.1:8081 https://httpbin.org/ip
+```
+
+### System proxy (macOS)
+
+Go to **System Settings > Wi-Fi > Details > Proxies**, enable **Web Proxy (HTTP)** and **Secure Web Proxy (HTTPS)**, set server to `127.0.0.1` and port to `8081`.
+
+## Installation
+
+### From crates.io
 
 ```bash
 cargo install rhoxy
 ```
-**Running the above command will globally install the rhoxy binary.**
 
-### Install as library
+### From source
 
-Run the following Cargo command in your project directory:
+```bash
+git clone https://github.com/JoshCap20/rhoxy.git
+cd rhoxy
+cargo build --release
+cargo install --path .
+```
+
+### As a library dependency
 
 ```bash
 cargo add rhoxy
 ```
 
-Or add the following line to your Cargo.toml:
-
-```
-rhoxy = "0.2.6"
-```
-
-### Source Install
-
-### Development
+## Development
 
 ```bash
-# listen on port 8081 on host 127.0.0.1 with debug logging
-cargo run -- --port 8081 --verbose
+cargo run -- --port 8081 --verbose   # Run with debug logging
+cargo test                            # Run all 62 tests
+cargo clippy                          # Lint
+cargo fmt                             # Format
 ```
 
-### Build
+## Architecture
 
-```bash
-cargo build --release
-cargo install --path .
-rhoxy --port 8080
+```
+src/
+├── main.rs              # CLI, server loop, connection handling
+├── lib.rs               # Shared utilities (line reader, SSRF checks, health)
+├── constants.rs         # All configuration constants
+└── protocol/
+    ├── mod.rs           # Protocol enum and dispatch
+    ├── http.rs          # HTTP forward proxy (reqwest-based)
+    └── https.rs         # HTTPS CONNECT tunnel
 ```
 
-### TODO
-- Authentication
-- Access logging
-- Rate limiting
+**HTTP flow:** Client request → parse headers/body → SSRF check → DNS verification → forward via reqwest connection pool → stream response back
+
+**HTTPS flow:** CONNECT request → drain headers → SSRF check → DNS verification → TCP connect to resolved address → `200 Connection Established` → bidirectional tunnel via `tokio::io::copy`
+
+## License
+
+[MIT](LICENSE)
