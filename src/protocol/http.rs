@@ -73,17 +73,15 @@ where
             response
         }
         Err(e) => {
-            let error_message = format!("Failed to send request to {}: {}", request.url, e);
             error!(
-                "HTTP request failed: {} (error kind: {:?})",
-                error_message,
-                e.source()
+                "HTTP request failed for {}: {} (source: {:?})",
+                request.url, e, e.source()
             );
             writer
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
-            return Err(e);
+            return Ok(());
         }
     };
 
@@ -97,7 +95,7 @@ where
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
-            return Err(e);
+            return Ok(());
         }
     };
 
