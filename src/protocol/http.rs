@@ -122,7 +122,7 @@ where
 {
     let is_chunked = headers
         .iter()
-        .any(|(k, v)| k == "transfer-encoding" && v.to_lowercase().contains("chunked"));
+        .any(|(k, v)| k == "transfer-encoding" && v.as_bytes().windows(7).any(|w| w.eq_ignore_ascii_case(b"chunked")));
 
     if is_chunked {
         let body = parse_chunked_body(reader).await?;
@@ -488,6 +488,17 @@ mod tests {
 
         let result = extract_request_body(&mut reader, &headers).await.unwrap();
         assert!(result.is_some(), "Chunked body should be read");
+        assert_eq!(result.unwrap(), b"hello");
+    }
+
+    #[tokio::test]
+    async fn test_extract_request_body_chunked_case_insensitive() {
+        let chunked_data = "5\r\nhello\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+        let headers = vec![("transfer-encoding".to_string(), "Chunked".to_string())];
+
+        let result = extract_request_body(&mut reader, &headers).await.unwrap();
+        assert!(result.is_some(), "Chunked detection should be case-insensitive");
         assert_eq!(result.unwrap(), b"hello");
     }
 
