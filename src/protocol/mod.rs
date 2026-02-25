@@ -3,11 +3,21 @@ pub mod https;
 
 use ::http::Method;
 use anyhow::Result;
+use std::fmt;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 pub enum Protocol {
     Http,
     Https,
+}
+
+impl fmt::Display for Protocol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Protocol::Http => f.write_str("HTTP"),
+            Protocol::Https => f.write_str("HTTPS"),
+        }
+    }
 }
 
 impl Protocol {
@@ -28,14 +38,7 @@ impl Protocol {
         }
     }
 
-    pub fn display(&self) -> String {
-        match self {
-            Protocol::Http => "HTTP".to_string(),
-            Protocol::Https => "HTTPS".to_string(),
-        }
-    }
-
-    pub fn get_protocol_from_method(method: &Method) -> Self {
+    pub fn from_method(method: &Method) -> Self {
         if method == Method::CONNECT {
             Protocol::Https
         } else {
