@@ -70,6 +70,25 @@ where
     Ok((method, url_string))
 }
 
+pub fn is_private_address(host: &str) -> bool {
+    if host == "localhost" || host == "0.0.0.0" || host == "::1" {
+        return true;
+    }
+
+    if let Ok(addr) = host.parse::<std::net::Ipv4Addr>() {
+        return addr.is_loopback()
+            || addr.is_private()
+            || addr.is_link_local()
+            || addr.is_unspecified();
+    }
+
+    if let Ok(addr) = host.parse::<std::net::Ipv6Addr>() {
+        return addr.is_loopback() || addr.is_unspecified();
+    }
+
+    false
+}
+
 pub fn is_health_check(url: &str) -> bool {
     if url == constants::HEALTH_ENDPOINT_PATH {
         return true;
@@ -287,5 +306,23 @@ mod tests {
         let mut buf = String::new();
         let result = read_line_bounded(&mut reader, &mut buf, 50).await;
         assert!(result.is_err(), "Should reject even without newline when exceeding limit");
+    }
+
+    #[test]
+    fn test_is_private_address() {
+        assert!(is_private_address("127.0.0.1"));
+        assert!(is_private_address("10.0.0.1"));
+        assert!(is_private_address("10.255.255.255"));
+        assert!(is_private_address("172.16.0.1"));
+        assert!(is_private_address("172.31.255.255"));
+        assert!(is_private_address("192.168.1.1"));
+        assert!(is_private_address("169.254.169.254"));
+        assert!(is_private_address("0.0.0.0"));
+        assert!(is_private_address("::1"));
+        assert!(is_private_address("localhost"));
+
+        assert!(!is_private_address("8.8.8.8"));
+        assert!(!is_private_address("example.com"));
+        assert!(!is_private_address("203.0.113.1"));
     }
 }

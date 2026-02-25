@@ -26,7 +26,7 @@ where
 
     let (host, port) = parse_host_port(target.as_str())?;
 
-    if is_private_address(&host) {
+    if crate::is_private_address(&host) {
         warn!("Blocked CONNECT to private address: {}", target);
         writer
             .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
@@ -84,25 +84,6 @@ where
     Ok(())
 }
 
-pub(crate) fn is_private_address(host: &str) -> bool {
-    if host == "localhost" || host == "0.0.0.0" || host == "::1" {
-        return true;
-    }
-
-    if let Ok(addr) = host.parse::<std::net::Ipv4Addr>() {
-        return addr.is_loopback()
-            || addr.is_private()
-            || addr.is_link_local()
-            || addr.is_unspecified();
-    }
-
-    if let Ok(addr) = host.parse::<std::net::Ipv6Addr>() {
-        return addr.is_loopback() || addr.is_unspecified();
-    }
-
-    false
-}
-
 fn parse_host_port(target: &str) -> Result<(String, u16)> {
     // IPv6
     if target.starts_with('[') {
@@ -142,24 +123,6 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_is_private_address() {
-        assert!(is_private_address("127.0.0.1"));
-        assert!(is_private_address("10.0.0.1"));
-        assert!(is_private_address("10.255.255.255"));
-        assert!(is_private_address("172.16.0.1"));
-        assert!(is_private_address("172.31.255.255"));
-        assert!(is_private_address("192.168.1.1"));
-        assert!(is_private_address("169.254.169.254"));
-        assert!(is_private_address("0.0.0.0"));
-        assert!(is_private_address("::1"));
-        assert!(is_private_address("localhost"));
-
-        assert!(!is_private_address("8.8.8.8"));
-        assert!(!is_private_address("example.com"));
-        assert!(!is_private_address("203.0.113.1"));
-    }
 
     #[test]
     fn test_parse_host_port_with_port() {
