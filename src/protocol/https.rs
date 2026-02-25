@@ -11,11 +11,19 @@ where
     W: AsyncWriteExt + Unpin,
     R: AsyncBufReadExt + Unpin,
 {
+    let mut header_count = 0;
     loop {
         let mut line = String::new();
         reader.read_line(&mut line).await?;
+        if line.len() > constants::MAX_HEADER_LINE_LEN {
+            return Err(anyhow::anyhow!("Header line too long"));
+        }
         if line.trim().is_empty() {
             break;
+        }
+        header_count += 1;
+        if header_count > constants::MAX_HEADER_COUNT {
+            return Err(anyhow::anyhow!("Too many headers"));
         }
     }
 

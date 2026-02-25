@@ -11,6 +11,13 @@ where
 {
     let mut first_line = String::new();
     reader.read_line(&mut first_line).await?;
+    if first_line.len() > constants::MAX_REQUEST_LINE_LEN {
+        return Err(anyhow::anyhow!(
+            "Request line too long: {} bytes (max {})",
+            first_line.len(),
+            constants::MAX_REQUEST_LINE_LEN
+        ));
+    }
     let first_line = first_line.trim();
 
     let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -131,6 +138,16 @@ mod tests {
                 .to_string()
                 .contains("Invalid request line")
         );
+    }
+
+    #[tokio::test]
+    async fn test_extract_request_parts_rejects_oversized_line() {
+        let long_path = "X".repeat(constants::MAX_REQUEST_LINE_LEN + 1);
+        let request = format!("GET /{} HTTP/1.1\r\n", long_path);
+        let mut reader = Cursor::new(request);
+
+        let result = extract_request_parts(&mut reader).await;
+        assert!(result.is_err(), "Should reject request lines exceeding size limit");
     }
 
     #[tokio::test]

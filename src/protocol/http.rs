@@ -165,16 +165,32 @@ where
     loop {
         line.clear();
         reader.read_line(&mut line).await?;
-        let line = line.trim();
 
-        if line.is_empty() {
+        if line.len() > constants::MAX_HEADER_LINE_LEN {
+            return Err(anyhow::anyhow!(
+                "Header line too long: {} bytes (max {})",
+                line.len(),
+                constants::MAX_HEADER_LINE_LEN
+            ));
+        }
+
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
             break;
         }
 
-        if let Some((key, value)) = line.split_once(':') {
+        if headers.len() >= constants::MAX_HEADER_COUNT {
+            return Err(anyhow::anyhow!(
+                "Too many headers: exceeds limit of {}",
+                constants::MAX_HEADER_COUNT
+            ));
+        }
+
+        if let Some((key, value)) = trimmed.split_once(':') {
             headers.push((key.trim().to_lowercase(), value.trim().to_string()));
         } else {
-            return Err(anyhow::anyhow!("Invalid header line: {}", line));
+            return Err(anyhow::anyhow!("Invalid header line: {}", trimmed));
         }
     }
     Ok(headers)
@@ -354,6 +370,29 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(get_header(&result, "empty-header").unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn test_parse_request_headers_rejects_too_many() {
+        let mut headers_data = String::new();
+        for i in 0..=constants::MAX_HEADER_COUNT {
+            headers_data.push_str(&format!("X-Header-{}: value\r\n", i));
+        }
+        headers_data.push_str("\r\n");
+        let mut reader = BufReader::new(Cursor::new(headers_data));
+
+        let result = parse_request_headers(&mut reader).await;
+        assert!(result.is_err(), "Should reject when header count exceeds limit");
+    }
+
+    #[tokio::test]
+    async fn test_parse_request_headers_rejects_oversized_line() {
+        let long_value = "X".repeat(constants::MAX_HEADER_LINE_LEN + 1);
+        let headers_data = format!("X-Big: {}\r\n\r\n", long_value);
+        let mut reader = BufReader::new(Cursor::new(headers_data));
+
+        let result = parse_request_headers(&mut reader).await;
+        assert!(result.is_err(), "Should reject header lines exceeding size limit");
     }
 
     #[tokio::test]
