@@ -26,7 +26,7 @@ where
 
     let (host, port) = parse_host_port(target.as_str())?;
 
-    if crate::is_private_address(&host) {
+    if crate::is_private_address(host) {
         warn!("Blocked CONNECT to private address: {}", target);
         writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
         writer.flush().await?;
@@ -34,7 +34,7 @@ where
     }
 
     // Resolve DNS and verify resolved IPs are not private (prevents DNS rebinding)
-    let resolved_addrs = match crate::resolve_and_verify_non_private(&host, port).await {
+    let resolved_addrs = match crate::resolve_and_verify_non_private(host, port).await {
         Ok(addrs) => addrs,
         Err(e) => {
             warn!("Blocked CONNECT to {}: {}", target, e);
@@ -95,18 +95,18 @@ where
     Ok(())
 }
 
-fn parse_host_port(target: &str) -> Result<(String, u16)> {
+fn parse_host_port(target: &str) -> Result<(&str, u16)> {
     // IPv6
     if target.starts_with('[') {
         if let Some(bracket_end) = target.find("]:") {
-            let host = target[1..bracket_end].to_string();
+            let host = &target[1..bracket_end];
             let port_str = &target[bracket_end + 2..];
             let port = port_str
                 .parse::<u16>()
                 .map_err(|_| anyhow::anyhow!("Invalid port: {}", port_str))?;
             return Ok((host, port));
         } else if target.ends_with(']') {
-            let host = target[1..target.len() - 1].to_string();
+            let host = &target[1..target.len() - 1];
             return Ok((host, 443));
         } else {
             return Err(anyhow::anyhow!("Invalid IPv6 format: {}", target));
@@ -117,17 +117,17 @@ fn parse_host_port(target: &str) -> Result<(String, u16)> {
     if let Some(colon_pos) = target.rfind(':') {
         let colon_count = target.matches(':').count();
         if colon_count > 1 {
-            return Ok((target.to_string(), 443));
+            return Ok((target, 443));
         }
 
-        let host = target[..colon_pos].to_string();
+        let host = &target[..colon_pos];
         let port_str = &target[colon_pos + 1..];
         let port = port_str
             .parse::<u16>()
             .map_err(|_| anyhow::anyhow!("Invalid port: {}", port_str))?;
         Ok((host, port))
     } else {
-        Ok((target.to_string(), 443))
+        Ok((target, 443))
     }
 }
 
