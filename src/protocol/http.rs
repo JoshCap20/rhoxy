@@ -69,11 +69,7 @@ where
         match crate::resolve_and_verify_non_private(host, port).await {
             Ok(addrs) => resolved_addrs = addrs,
             Err(e) => {
-                tracing::warn!(
-                    "Blocked HTTP request (DNS rebinding): {} - {}",
-                    url_string,
-                    e
-                );
+                tracing::warn!("Blocked HTTP request to {}: {}", url_string, e);
                 writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
                 writer.flush().await?;
                 return Ok(());
@@ -425,12 +421,10 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid header line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid header line"));
     }
 
     #[tokio::test]

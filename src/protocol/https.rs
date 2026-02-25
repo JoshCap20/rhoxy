@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, copy};
+use tokio::io::{copy, AsyncBufReadExt, AsyncWriteExt};
 use tokio::join;
 use tokio::net::TcpStream;
 use tracing::{debug, warn};
@@ -37,7 +37,7 @@ where
     let resolved_addrs = match crate::resolve_and_verify_non_private(&host, port).await {
         Ok(addrs) => addrs,
         Err(e) => {
-            warn!("Blocked CONNECT (DNS rebinding): {} - {}", target, e);
+            warn!("Blocked CONNECT to {}: {}", target, e);
             writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
             writer.flush().await?;
             return Ok(());
@@ -216,12 +216,10 @@ mod tests {
     fn test_parse_host_port_invalid_ipv6_brackets() {
         let result = parse_host_port("[2001:db8::1:invalid");
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid IPv6 format")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid IPv6 format"));
     }
 
     #[test]
