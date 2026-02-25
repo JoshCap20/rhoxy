@@ -50,9 +50,7 @@ where
     if let Some(host) = url.host_str() {
         if crate::is_private_address(host) {
             tracing::warn!("Blocked HTTP request to private address: {}", url_string);
-            writer
-                .write_all(constants::FORBIDDEN_RESPONSE)
-                .await?;
+            writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
             writer.flush().await?;
             return Ok(());
         }
@@ -60,10 +58,12 @@ where
         // Resolve DNS and verify resolved IPs are not private (prevents DNS rebinding)
         let port = url.port().unwrap_or(80);
         if let Err(e) = crate::resolve_and_verify_non_private(host, port).await {
-            tracing::warn!("Blocked HTTP request (DNS rebinding): {} - {}", url_string, e);
-            writer
-                .write_all(constants::FORBIDDEN_RESPONSE)
-                .await?;
+            tracing::warn!(
+                "Blocked HTTP request (DNS rebinding): {} - {}",
+                url_string,
+                e
+            );
+            writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
             writer.flush().await?;
             return Ok(());
         }
@@ -87,7 +87,9 @@ where
         Err(e) => {
             error!(
                 "HTTP request failed for {}: {} (source: {:?})",
-                request_url, e, e.source()
+                request_url,
+                e,
+                e.source()
             );
             writer
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
@@ -121,9 +123,12 @@ async fn extract_request_body<R>(
 where
     R: AsyncBufReadExt + Unpin,
 {
-    let is_chunked = headers
-        .iter()
-        .any(|(k, v)| k == "transfer-encoding" && v.as_bytes().windows(7).any(|w| w.eq_ignore_ascii_case(b"chunked")));
+    let is_chunked = headers.iter().any(|(k, v)| {
+        k == "transfer-encoding"
+            && v.as_bytes()
+                .windows(7)
+                .any(|w| w.eq_ignore_ascii_case(b"chunked"))
+    });
 
     if is_chunked {
         let body = parse_chunked_body(reader).await?;
@@ -307,7 +312,10 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
     fn get_header<'a>(headers: &'a [(String, String)], key: &str) -> Option<&'a str> {
-        headers.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        headers
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     #[tokio::test]
@@ -348,7 +356,10 @@ mod tests {
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(get_header(&result, "host").unwrap(), "example.com");
-        assert_eq!(get_header(&result, "content-type").unwrap(), "application/json");
+        assert_eq!(
+            get_header(&result, "content-type").unwrap(),
+            "application/json"
+        );
         assert_eq!(get_header(&result, "content-length").unwrap(), "100");
     }
 
@@ -369,7 +380,10 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(get_header(&result, "host").unwrap(), "example.com");
-        assert_eq!(get_header(&result, "content-type").unwrap(), "application/json");
+        assert_eq!(
+            get_header(&result, "content-type").unwrap(),
+            "application/json"
+        );
     }
 
     #[tokio::test]
@@ -418,7 +432,10 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await;
-        assert!(result.is_err(), "Should reject when header count exceeds limit");
+        assert!(
+            result.is_err(),
+            "Should reject when header count exceeds limit"
+        );
     }
 
     #[tokio::test]
@@ -428,7 +445,10 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await;
-        assert!(result.is_err(), "Should reject header lines exceeding size limit");
+        assert!(
+            result.is_err(),
+            "Should reject header lines exceeding size limit"
+        );
     }
 
     #[tokio::test]
@@ -442,7 +462,11 @@ mod tests {
             .filter(|(k, _)| k.as_str() == "set-cookie")
             .map(|(_, v)| v.as_str())
             .collect();
-        assert_eq!(cookie_values.len(), 2, "Both Set-Cookie headers should be preserved");
+        assert_eq!(
+            cookie_values.len(),
+            2,
+            "Both Set-Cookie headers should be preserved"
+        );
         assert!(cookie_values.contains(&"a=1"));
         assert!(cookie_values.contains(&"b=2"));
     }
@@ -454,7 +478,10 @@ mod tests {
         let headers = vec![("content-length".to_string(), "5".to_string())];
 
         let result = extract_request_body(&mut reader, &headers).await.unwrap();
-        assert!(result.is_some(), "Body should be read regardless of Content-Length casing");
+        assert!(
+            result.is_some(),
+            "Body should be read regardless of Content-Length casing"
+        );
         assert_eq!(result.unwrap(), b"hello");
     }
 
@@ -503,7 +530,10 @@ mod tests {
         let headers = vec![("transfer-encoding".to_string(), "Chunked".to_string())];
 
         let result = extract_request_body(&mut reader, &headers).await.unwrap();
-        assert!(result.is_some(), "Chunked detection should be case-insensitive");
+        assert!(
+            result.is_some(),
+            "Chunked detection should be case-insensitive"
+        );
         assert_eq!(result.unwrap(), b"hello");
     }
 
@@ -531,8 +561,7 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 4096];
             let _ = stream.read(&mut buf).await;
-            let response =
-                "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/nowhere\r\nContent-Length: 0\r\n\r\n";
+            let response = "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/nowhere\r\nContent-Length: 0\r\n\r\n";
             stream.write_all(response.as_bytes()).await.unwrap();
         });
 
@@ -561,7 +590,10 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(chunked));
 
         let result = parse_chunked_body(&mut reader).await;
-        assert!(result.is_err(), "Should reject chunked body exceeding MAX_BODY_SIZE");
+        assert!(
+            result.is_err(),
+            "Should reject chunked body exceeding MAX_BODY_SIZE"
+        );
     }
 
     #[tokio::test]
@@ -570,7 +602,10 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(body));
 
         let result = parse_request_body(&mut reader, Some(constants::MAX_BODY_SIZE + 1)).await;
-        assert!(result.is_err(), "Should reject body exceeding MAX_BODY_SIZE");
+        assert!(
+            result.is_err(),
+            "Should reject body exceeding MAX_BODY_SIZE"
+        );
     }
 
     #[tokio::test]
@@ -588,7 +623,10 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_ok(), "SSRF block should return Ok after sending 403");
+        assert!(
+            result.is_ok(),
+            "SSRF block should return Ok after sending 403"
+        );
         let response = String::from_utf8_lossy(&writer);
         assert!(response.contains("403 Forbidden"));
     }

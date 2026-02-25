@@ -5,11 +5,7 @@ use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-pub async fn read_line_bounded<R>(
-    reader: &mut R,
-    buf: &mut String,
-    max_len: usize,
-) -> Result<usize>
+pub async fn read_line_bounded<R>(reader: &mut R, buf: &mut String, max_len: usize) -> Result<usize>
 where
     R: AsyncBufReadExt + Unpin,
 {
@@ -56,7 +52,12 @@ where
     R: AsyncBufReadExt + Unpin,
 {
     let mut first_line = String::new();
-    read_line_bounded(&mut *reader, &mut first_line, constants::MAX_REQUEST_LINE_LEN).await?;
+    read_line_bounded(
+        &mut *reader,
+        &mut first_line,
+        constants::MAX_REQUEST_LINE_LEN,
+    )
+    .await?;
     let first_line = first_line.trim();
 
     let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -92,10 +93,7 @@ pub fn is_private_address(host: &str) -> bool {
 pub fn is_private_ip(ip: &std::net::IpAddr) -> bool {
     match ip {
         std::net::IpAddr::V4(addr) => {
-            addr.is_loopback()
-                || addr.is_private()
-                || addr.is_link_local()
-                || addr.is_unspecified()
+            addr.is_loopback() || addr.is_private() || addr.is_link_local() || addr.is_unspecified()
         }
         std::net::IpAddr::V6(addr) => addr.is_loopback() || addr.is_unspecified(),
     }
@@ -105,10 +103,9 @@ pub async fn resolve_and_verify_non_private(
     host: &str,
     port: u16,
 ) -> Result<Vec<std::net::SocketAddr>> {
-    let addrs: Vec<std::net::SocketAddr> =
-        tokio::net::lookup_host(format!("{}:{}", host, port))
-            .await?
-            .collect();
+    let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host(format!("{}:{}", host, port))
+        .await?
+        .collect();
 
     if addrs.is_empty() {
         return Err(anyhow::anyhow!(
@@ -289,7 +286,10 @@ mod tests {
         let mut reader = Cursor::new(request);
 
         let result = extract_request_parts(&mut reader).await;
-        assert!(result.is_err(), "Should reject request lines exceeding size limit");
+        assert!(
+            result.is_err(),
+            "Should reject request lines exceeding size limit"
+        );
     }
 
     #[tokio::test]
@@ -337,7 +337,10 @@ mod tests {
         let mut reader = Cursor::new(data);
         let mut buf = String::new();
         let result = read_line_bounded(&mut reader, &mut buf, 6).await;
-        assert!(result.is_err(), "Should reject when line is one byte over limit");
+        assert!(
+            result.is_err(),
+            "Should reject when line is one byte over limit"
+        );
     }
 
     #[tokio::test]
@@ -356,7 +359,10 @@ mod tests {
         let mut reader = Cursor::new(long_data);
         let mut buf = String::new();
         let result = read_line_bounded(&mut reader, &mut buf, 50).await;
-        assert!(result.is_err(), "Should reject even without newline when exceeding limit");
+        assert!(
+            result.is_err(),
+            "Should reject even without newline when exceeding limit"
+        );
     }
 
     #[test]
@@ -384,7 +390,9 @@ mod tests {
         assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
         assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
         assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
-        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(
+            169, 254, 169, 254
+        ))));
         assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::UNSPECIFIED)));
         assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
         assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
@@ -401,6 +409,9 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_and_verify_blocks_localhost() {
         let result = resolve_and_verify_non_private("localhost", 80).await;
-        assert!(result.is_err(), "Should block hostnames resolving to private IPs");
+        assert!(
+            result.is_err(),
+            "Should block hostnames resolving to private IPs"
+        );
     }
 }
