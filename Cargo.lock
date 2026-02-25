@@ -1026,7 +1026,6 @@ dependencies = [
  "anyhow",
  "clap",
  "http",
- "itoa",
  "reqwest",
  "tokio",
  "tracing",
