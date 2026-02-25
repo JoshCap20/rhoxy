@@ -78,15 +78,16 @@ where
 
     debug!("Received HTTP request: {:?}", request);
 
-    let client_to_target = match send_request(&request).await {
+    let request_url = request.url.to_string();
+    let client_to_target = match send_request(request).await {
         Ok(response) => {
-            debug!("Forwarding response for request: {:?}", request);
+            debug!("Forwarding response for {}", request_url);
             response
         }
         Err(e) => {
             error!(
                 "HTTP request failed for {}: {} (source: {:?})",
-                request.url, e, e.source()
+                request_url, e, e.source()
             );
             writer
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
@@ -98,7 +99,7 @@ where
 
     match forward_response(writer, client_to_target).await {
         Ok(_) => {
-            debug!("Forwarded response for request: {:?}", request);
+            debug!("Forwarded response for {}", request_url);
         }
         Err(e) => {
             error!("Failed to forward response: {}", e);
@@ -137,8 +138,8 @@ where
     Ok(body)
 }
 
-async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
-    let mut req = HTTP_CLIENT.request(request.method.clone(), request.url.clone());
+async fn send_request(request: HttpRequest) -> Result<reqwest::Response> {
+    let mut req = HTTP_CLIENT.request(request.method, request.url);
 
     for (key, value) in &request.headers {
         if !is_hop_by_hop_header(key) {
@@ -146,8 +147,8 @@ async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
         }
     }
 
-    if let Some(body) = &request.body {
-        req = req.body(body.clone());
+    if let Some(body) = request.body {
+        req = req.body(body);
     }
 
     let response = req.send().await?;
@@ -542,7 +543,7 @@ mod tests {
             body: None,
         };
 
-        let response = send_request(&request)
+        let response = send_request(request)
             .await
             .expect("Proxy should return redirect response directly, not follow it");
         assert_eq!(response.status().as_u16(), 302);
