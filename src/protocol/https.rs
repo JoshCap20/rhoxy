@@ -35,9 +35,22 @@ where
         return Ok(());
     }
 
+    // Resolve DNS and verify resolved IPs are not private (prevents DNS rebinding)
+    let resolved_addrs = match crate::resolve_and_verify_non_private(&host, port).await {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            warn!("Blocked CONNECT (DNS rebinding): {} - {}", target, e);
+            writer
+                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .await?;
+            writer.flush().await?;
+            return Ok(());
+        }
+    };
+
     debug!("Establishing HTTPS connection to {}:{}", host, port);
 
-    let target_stream = match TcpStream::connect(format!("{}:{}", host, port)).await {
+    let target_stream = match TcpStream::connect(resolved_addrs.as_slice()).await {
         Ok(stream) => stream,
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);

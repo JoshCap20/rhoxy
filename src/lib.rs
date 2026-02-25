@@ -89,6 +89,48 @@ pub fn is_private_address(host: &str) -> bool {
     false
 }
 
+pub fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(addr) => {
+            addr.is_loopback()
+                || addr.is_private()
+                || addr.is_link_local()
+                || addr.is_unspecified()
+        }
+        std::net::IpAddr::V6(addr) => addr.is_loopback() || addr.is_unspecified(),
+    }
+}
+
+pub async fn resolve_and_verify_non_private(
+    host: &str,
+    port: u16,
+) -> Result<Vec<std::net::SocketAddr>> {
+    let addrs: Vec<std::net::SocketAddr> =
+        tokio::net::lookup_host(format!("{}:{}", host, port))
+            .await?
+            .collect();
+
+    if addrs.is_empty() {
+        return Err(anyhow::anyhow!(
+            "DNS resolution returned no addresses for {}:{}",
+            host,
+            port
+        ));
+    }
+
+    for addr in &addrs {
+        if is_private_ip(&addr.ip()) {
+            return Err(anyhow::anyhow!(
+                "DNS rebinding detected: {} resolved to private IP {}",
+                host,
+                addr.ip()
+            ));
+        }
+    }
+
+    Ok(addrs)
+}
+
 pub fn is_health_check(url: &str) -> bool {
     if url == constants::HEALTH_ENDPOINT_PATH {
         return true;
@@ -324,5 +366,32 @@ mod tests {
         assert!(!is_private_address("8.8.8.8"));
         assert!(!is_private_address("example.com"));
         assert!(!is_private_address("203.0.113.1"));
+    }
+
+    #[test]
+    fn test_is_private_ip_v4() {
+        use std::net::{IpAddr, Ipv4Addr};
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+        assert!(is_private_ip(&IpAddr::V4(Ipv4Addr::UNSPECIFIED)));
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert!(!is_private_ip(&IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))));
+    }
+
+    #[test]
+    fn test_is_private_ip_v6() {
+        use std::net::{IpAddr, Ipv6Addr};
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::UNSPECIFIED)));
+        assert!(!is_private_ip(&IpAddr::V6("2001:db8::1".parse().unwrap())));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_and_verify_blocks_localhost() {
+        let result = resolve_and_verify_non_private("localhost", 80).await;
+        assert!(result.is_err(), "Should block hostnames resolving to private IPs");
     }
 }
