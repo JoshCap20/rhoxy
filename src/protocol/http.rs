@@ -69,11 +69,7 @@ where
         match crate::resolve_and_verify_non_private(host, port).await {
             Ok(addrs) => resolved_addrs = addrs,
             Err(e) => {
-                tracing::warn!(
-                    "Blocked HTTP request (DNS rebinding): {} - {}",
-                    url_string,
-                    e
-                );
+                tracing::warn!("Blocked HTTP request to {}: {}", url_string, e);
                 writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
                 writer.flush().await?;
                 return Ok(());
@@ -105,7 +101,7 @@ where
                 e.source()
             );
             writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
+                .write_all(constants::BAD_GATEWAY_RESPONSE)
                 .await?;
             writer.flush().await?;
             return Ok(());
@@ -119,7 +115,7 @@ where
         Err(e) => {
             error!("Failed to forward response: {}", e);
             writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
+                .write_all(constants::BAD_GATEWAY_RESPONSE)
                 .await?;
             writer.flush().await?;
             return Ok(());
@@ -425,12 +421,10 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid header line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid header line"));
     }
 
     #[tokio::test]
@@ -574,14 +568,15 @@ mod tests {
         // The proxy-to-client connection is always HTTP/1.1, regardless of
         // what protocol the upstream server used. HTTP/2 responses must be
         // downgraded when serialized back to the client.
-        let line = build_proxy_status_line(200, "OK");
-        assert_eq!(line, "HTTP/1.1 200 OK\r\n");
-
-        let line = build_proxy_status_line(404, "Not Found");
-        assert_eq!(line, "HTTP/1.1 404 Not Found\r\n");
-
-        let line = build_proxy_status_line(302, "Found");
-        assert_eq!(line, "HTTP/1.1 302 Found\r\n");
+        assert_eq!(build_proxy_status_line(200, "OK"), "HTTP/1.1 200 OK\r\n");
+        assert_eq!(
+            build_proxy_status_line(404, "Not Found"),
+            "HTTP/1.1 404 Not Found\r\n"
+        );
+        assert_eq!(
+            build_proxy_status_line(302, "Found"),
+            "HTTP/1.1 302 Found\r\n"
+        );
     }
 
     #[tokio::test]

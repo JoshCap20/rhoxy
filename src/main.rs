@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{BufReader, BufWriter};
+use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -97,7 +97,18 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
-    let (method, url_string) = rhoxy::extract_request_parts(&mut reader).await?;
+    let (method, url_string) = match rhoxy::extract_request_parts(&mut reader).await {
+        Ok(parts) => parts,
+        Err(e) => {
+            warn!("[{peer_addr}] Malformed request: {e}");
+            // Best-effort response — client may have already disconnected.
+            let _ = writer
+                .write_all(rhoxy::constants::BAD_REQUEST_RESPONSE)
+                .await;
+            let _ = writer.flush().await;
+            return Ok(());
+        }
+    };
 
     let protocol = rhoxy::protocol::Protocol::from_method(&method);
 

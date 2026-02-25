@@ -5,7 +5,7 @@ use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-pub async fn read_line_bounded<R>(reader: &mut R, buf: &mut String, max_len: usize) -> Result<usize>
+pub async fn read_line_bounded<R>(reader: &mut R, buf: &mut String, max_len: usize) -> Result<()>
 where
     R: AsyncBufReadExt + Unpin,
 {
@@ -27,7 +27,6 @@ where
             }
             bytes.extend_from_slice(&available[..to_consume]);
             reader.consume(to_consume);
-            total += to_consume;
             break;
         }
 
@@ -44,7 +43,7 @@ where
     }
 
     *buf = String::from_utf8(bytes).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
-    Ok(total)
+    Ok(())
 }
 
 pub async fn extract_request_parts<R>(reader: &mut R) -> Result<(Method, String)>
@@ -145,20 +144,10 @@ pub async fn resolve_and_verify_non_private(
 }
 
 pub fn is_health_check(url: &str) -> bool {
-    // Strip query string if present
-    let url = url.split('?').next().unwrap_or(url);
-
-    if url == constants::HEALTH_ENDPOINT_PATH {
-        return true;
-    }
-    // For absolute URLs like http://host:port/health, extract the path
-    if let Some(scheme_end) = url.find("://") {
-        let after_authority = &url[scheme_end + 3..];
-        if let Some(path_start) = after_authority.find('/') {
-            return &after_authority[path_start..] == constants::HEALTH_ENDPOINT_PATH;
-        }
-    }
-    false
+    // Only match relative /health — this targets the proxy itself.
+    // Absolute URLs (http://host/health) target upstream servers and must be forwarded.
+    let path = url.split('?').next().unwrap_or(url);
+    path == constants::HEALTH_ENDPOINT_PATH
 }
 
 pub async fn handle_health_check<W>(writer: &mut W) -> Result<()>
@@ -232,12 +221,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[tokio::test]
@@ -247,12 +234,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[tokio::test]
@@ -262,12 +247,10 @@ mod tests {
 
         let result = extract_request_parts(&mut reader).await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid request line")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid request line"));
     }
 
     #[test]
@@ -276,10 +259,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_health_check_matches_absolute_url() {
-        assert!(is_health_check("http://localhost:8080/health"));
-        assert!(is_health_check("http://127.0.0.1:8081/health"));
-        assert!(is_health_check("http://proxy.example.com/health"));
+    fn test_is_health_check_ignores_absolute_url() {
+        // Absolute URLs target upstream servers, not the proxy itself.
+        // Only relative /health should be intercepted.
+        assert!(!is_health_check("http://localhost:8080/health"));
+        assert!(!is_health_check("http://127.0.0.1:8081/health"));
+        assert!(!is_health_check("http://api.example.com/health"));
     }
 
     #[test]
@@ -292,7 +277,8 @@ mod tests {
     #[test]
     fn test_is_health_check_with_query_string() {
         assert!(is_health_check("/health?foo=bar"));
-        assert!(is_health_check("http://localhost:8080/health?check=1"));
+        // Absolute URL with query string targets upstream, not proxy
+        assert!(!is_health_check("http://localhost:8080/health?check=1"));
     }
 
     #[tokio::test]
@@ -323,9 +309,8 @@ mod tests {
         let data = "hello world\n";
         let mut reader = Cursor::new(data);
         let mut buf = String::new();
-        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
         assert_eq!(buf, "hello world\n");
-        assert_eq!(bytes, 12);
     }
 
     #[tokio::test]
@@ -364,9 +349,8 @@ mod tests {
         let data = "no newline";
         let mut reader = Cursor::new(data);
         let mut buf = String::new();
-        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
         assert_eq!(buf, "no newline");
-        assert_eq!(bytes, 10);
     }
 
     #[tokio::test]

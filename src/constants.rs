@@ -1,5 +1,5 @@
-pub const BAD_GATEWAY_RESPONSE_HEADER: &[u8] =
-    b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\n";
+pub const BAD_GATEWAY_RESPONSE: &[u8] = b"HTTP/1.1 502 Bad Gateway\r\n\r\n";
+pub const BAD_REQUEST_RESPONSE: &[u8] = b"HTTP/1.1 400 Bad Request\r\n\r\n";
 pub const FORBIDDEN_RESPONSE: &[u8] = b"HTTP/1.1 403 Forbidden\r\n\r\n";
 pub const CONNECTION_ESTABLISHED_RESPONSE: &[u8] = b"HTTP/1.1 200 Connection Established\r\n\r\n";
 
