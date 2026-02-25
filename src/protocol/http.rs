@@ -7,7 +7,10 @@ use tracing::{debug, error};
 
 use crate::constants;
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+/// Shared client configuration applied to both the static pool and per-host
+/// pinned clients. Centralised here to prevent timeout/policy drift between
+/// the two paths.
+fn base_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -19,6 +22,10 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .http2_keep_alive_while_idle(true)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
+}
+
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    base_client_builder()
         .build()
         .expect("Failed to build HTTP client")
 });
@@ -150,25 +157,23 @@ where
 }
 
 async fn send_request(request: HttpRequest) -> Result<reqwest::Response> {
-    // Build a per-request client pinned to the pre-resolved addresses to close the
-    // DNS TOCTOU gap: without pinning, reqwest would resolve DNS independently and
-    // an attacker could return a private IP on the second resolution.
-    let client = if !request.resolved_addrs.is_empty() {
-        if let Some(host) = request.url.host_str() {
-            let mut builder = reqwest::Client::builder()
-                .timeout(Duration::from_secs(30))
-                .connect_timeout(Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::none())
-                .no_proxy();
+    // Pin DNS to the pre-verified addresses to close the TOCTOU gap: without
+    // pinning, reqwest re-resolves independently and an attacker with a short-TTL
+    // record could return a private IP on the second resolution.
+    //
+    // We build a per-host client from base_client_builder() so all timeout,
+    // pooling, and keepalive settings stay in sync with HTTP_CLIENT.
+    let client = match (request.resolved_addrs.is_empty(), request.url.host_str()) {
+        (false, Some(host)) => {
+            let mut builder = base_client_builder();
             for addr in &request.resolved_addrs {
                 builder = builder.resolve(host, *addr);
             }
             builder.build()?
-        } else {
-            HTTP_CLIENT.clone()
         }
-    } else {
-        HTTP_CLIENT.clone()
+        // Unreachable in normal proxy operation: handle_request always populates
+        // resolved_addrs when a host is present. Defensive fallback only.
+        _ => HTTP_CLIENT.clone(),
     };
 
     let mut req = client.request(request.method, request.url);
