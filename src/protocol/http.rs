@@ -245,8 +245,10 @@ where
     loop {
         line.clear();
         crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN).await?;
-        let size = usize::from_str_radix(line.trim(), 16)
-            .map_err(|_| anyhow::anyhow!("Invalid chunk size: {}", line.trim()))?;
+        // Strip chunk extensions (RFC 7230: chunk-size *( ";" chunk-ext ) CRLF)
+        let size_str = line.trim().split(';').next().unwrap_or("");
+        let size = usize::from_str_radix(size_str, 16)
+            .map_err(|_| anyhow::anyhow!("Invalid chunk size: {}", size_str))?;
 
         if size == 0 {
             // Read trailing \r\n after final chunk
@@ -586,5 +588,15 @@ mod tests {
         assert!(result.is_ok(), "SSRF block should return Ok after sending 403");
         let response = String::from_utf8_lossy(&writer);
         assert!(response.contains("403 Forbidden"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_chunked_body_with_extensions() {
+        // RFC 7230: chunk-size can be followed by ;ext=value
+        let chunked_data = "5;ext=val\r\nhello\r\n6;name=\"foo\"\r\n world\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+
+        let result = parse_chunked_body(&mut reader).await.unwrap();
+        assert_eq!(result, b"hello world");
     }
 }
