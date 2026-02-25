@@ -165,8 +165,10 @@ where
     writer.write_all(status_line.as_bytes()).await?;
 
     for (key, value) in response.headers().iter() {
-        let header_line = format!("{}: {}\r\n", key, value.to_str().unwrap_or(""));
-        writer.write_all(header_line.as_bytes()).await?;
+        writer.write_all(key.as_str().as_bytes()).await?;
+        writer.write_all(b": ").await?;
+        writer.write_all(value.as_bytes()).await?;
+        writer.write_all(b"\r\n").await?;
     }
     writer.write_all(b"\r\n").await?;
 
