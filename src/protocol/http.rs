@@ -1,7 +1,7 @@
 use anyhow::Result;
 use http::Method;
 use reqwest::Url;
-use std::{collections::HashMap, sync::LazyLock, time::Duration};
+use std::{sync::LazyLock, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, error};
 
@@ -27,7 +27,7 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 struct HttpRequest {
     method: Method,
     url: Url,
-    headers: HashMap<String, String>,
+    headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
 }
 
@@ -93,14 +93,15 @@ where
 
 async fn extract_request_body<R>(
     reader: &mut R,
-    headers: &HashMap<String, String>,
+    headers: &[(String, String)],
 ) -> Result<Option<Vec<u8>>, anyhow::Error>
 where
     R: AsyncReadExt + Unpin,
 {
     let content_length = headers
-        .get("content-length")
-        .and_then(|s| s.parse::<usize>().ok());
+        .iter()
+        .find(|(k, _)| k == "content-length")
+        .and_then(|(_, v)| v.parse::<usize>().ok());
     let body = parse_request_body(reader, content_length).await?;
     Ok(body)
 }
@@ -145,11 +146,11 @@ where
     Ok(())
 }
 
-async fn parse_request_headers<R>(reader: &mut R) -> Result<HashMap<String, String>>
+async fn parse_request_headers<R>(reader: &mut R) -> Result<Vec<(String, String)>>
 where
     R: AsyncBufReadExt + Unpin,
 {
-    let mut headers = HashMap::new();
+    let mut headers = Vec::new();
     let mut line = String::new();
 
     loop {
@@ -162,7 +163,7 @@ where
         }
 
         if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_lowercase(), value.trim().to_string());
+            headers.push((key.trim().to_lowercase(), value.trim().to_string()));
         } else {
             return Err(anyhow::anyhow!("Invalid header line: {}", line));
         }
@@ -209,9 +210,12 @@ mod tests {
     use super::*;
     use http::Method;
     use reqwest::Url;
-    use std::collections::HashMap;
     use std::io::Cursor;
     use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
+
+    fn get_header<'a>(headers: &'a [(String, String)], key: &str) -> Option<&'a str> {
+        headers.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
 
     #[tokio::test]
     async fn test_parse_request_body_with_content_length() {
@@ -250,9 +254,9 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result.get("host").unwrap(), "example.com");
-        assert_eq!(result.get("content-type").unwrap(), "application/json");
-        assert_eq!(result.get("content-length").unwrap(), "100");
+        assert_eq!(get_header(&result, "host").unwrap(), "example.com");
+        assert_eq!(get_header(&result, "content-type").unwrap(), "application/json");
+        assert_eq!(get_header(&result, "content-length").unwrap(), "100");
     }
 
     #[tokio::test]
@@ -271,8 +275,8 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await.unwrap();
-        assert_eq!(result.get("host").unwrap(), "example.com");
-        assert_eq!(result.get("content-type").unwrap(), "application/json");
+        assert_eq!(get_header(&result, "host").unwrap(), "example.com");
+        assert_eq!(get_header(&result, "content-type").unwrap(), "application/json");
     }
 
     #[tokio::test]
@@ -297,7 +301,7 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(
-            result.get("authorization").unwrap(),
+            get_header(&result, "authorization").unwrap(),
             "Bearer token:with:colons"
         );
     }
@@ -308,15 +312,30 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await.unwrap();
-        assert_eq!(result.get("empty-header").unwrap(), "");
+        assert_eq!(get_header(&result, "empty-header").unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn test_parse_request_headers_preserves_duplicates() {
+        let headers_data = "Set-Cookie: a=1\r\nSet-Cookie: b=2\r\nHost: example.com\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(headers_data));
+
+        let result = parse_request_headers(&mut reader).await.unwrap();
+        let cookie_values: Vec<&str> = result
+            .iter()
+            .filter(|(k, _)| k.as_str() == "set-cookie")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(cookie_values.len(), 2, "Both Set-Cookie headers should be preserved");
+        assert!(cookie_values.contains(&"a=1"));
+        assert!(cookie_values.contains(&"b=2"));
     }
 
     #[tokio::test]
     async fn test_extract_request_body_case_insensitive_content_length() {
         let body_data = b"hello";
         let mut reader = BufReader::new(Cursor::new(body_data));
-        let mut headers = HashMap::new();
-        headers.insert("content-length".to_string(), "5".to_string());
+        let headers = vec![("content-length".to_string(), "5".to_string())];
 
         let result = extract_request_body(&mut reader, &headers).await.unwrap();
         assert!(result.is_some(), "Body should be read regardless of Content-Length casing");
@@ -355,7 +374,7 @@ mod tests {
         let request = HttpRequest {
             method: Method::GET,
             url: Url::parse(&format!("http://{}/test", addr)).unwrap(),
-            headers: HashMap::new(),
+            headers: Vec::new(),
             body: None,
         };
 
