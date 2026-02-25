@@ -127,11 +127,9 @@ async fn forward_response<W>(writer: &mut W, response: reqwest::Response) -> Res
 where
     W: AsyncWriteExt + Unpin,
 {
-    let status_line = format!(
-        "{} {} {}\r\n",
-        http_version_to_string(response.version()),
+    let status_line = build_proxy_status_line(
         response.status().as_u16(),
-        response.status().canonical_reason().unwrap_or("")
+        response.status().canonical_reason().unwrap_or(""),
     );
     writer.write_all(status_line.as_bytes()).await?;
 
@@ -189,15 +187,8 @@ where
     }
 }
 
-const fn http_version_to_string(version: http::Version) -> &'static str {
-    match version {
-        http::Version::HTTP_09 => "HTTP/0.9",
-        http::Version::HTTP_10 => "HTTP/1.0",
-        http::Version::HTTP_11 => "HTTP/1.1",
-        http::Version::HTTP_2 => "HTTP/2.0",
-        http::Version::HTTP_3 => "HTTP/3.0",
-        _ => "HTTP/1.1",
-    }
+fn build_proxy_status_line(status_code: u16, reason: &str) -> String {
+    format!("HTTP/1.1 {} {}\r\n", status_code, reason)
 }
 
 fn is_hop_by_hop_header(header: &str) -> bool {
@@ -222,15 +213,6 @@ mod tests {
     use std::collections::HashMap;
     use std::io::Cursor;
     use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
-
-    #[test]
-    fn test_http_version_to_string() {
-        assert_eq!(http_version_to_string(http::Version::HTTP_09), "HTTP/0.9");
-        assert_eq!(http_version_to_string(http::Version::HTTP_10), "HTTP/1.0");
-        assert_eq!(http_version_to_string(http::Version::HTTP_11), "HTTP/1.1");
-        assert_eq!(http_version_to_string(http::Version::HTTP_2), "HTTP/2.0");
-        assert_eq!(http_version_to_string(http::Version::HTTP_3), "HTTP/3.0");
-    }
 
     #[tokio::test]
     async fn test_parse_request_body_with_content_length() {
@@ -328,6 +310,21 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.get("Empty-Header").unwrap(), "");
+    }
+
+    #[test]
+    fn test_build_proxy_status_line_always_http_1_1() {
+        // The proxy-to-client connection is always HTTP/1.1, regardless of
+        // what protocol the upstream server used. HTTP/2 responses must be
+        // downgraded when serialized back to the client.
+        let line = build_proxy_status_line(200, "OK");
+        assert_eq!(line, "HTTP/1.1 200 OK\r\n");
+
+        let line = build_proxy_status_line(404, "Not Found");
+        assert_eq!(line, "HTTP/1.1 404 Not Found\r\n");
+
+        let line = build_proxy_status_line(302, "Found");
+        assert_eq!(line, "HTTP/1.1 302 Found\r\n");
     }
 
     #[tokio::test]
