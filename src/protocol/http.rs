@@ -96,8 +96,17 @@ async fn extract_request_body<R>(
     headers: &[(String, String)],
 ) -> Result<Option<Vec<u8>>, anyhow::Error>
 where
-    R: AsyncReadExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
 {
+    let is_chunked = headers
+        .iter()
+        .any(|(k, v)| k == "transfer-encoding" && v.to_lowercase().contains("chunked"));
+
+    if is_chunked {
+        let body = parse_chunked_body(reader).await?;
+        return Ok(Some(body));
+    }
+
     let content_length = headers
         .iter()
         .find(|(k, _)| k == "content-length")
@@ -185,6 +194,38 @@ where
     } else {
         Ok(None)
     }
+}
+
+async fn parse_chunked_body<R>(reader: &mut R) -> Result<Vec<u8>>
+where
+    R: AsyncBufReadExt + Unpin,
+{
+    let mut body = Vec::new();
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await?;
+        let size = usize::from_str_radix(line.trim(), 16)
+            .map_err(|_| anyhow::anyhow!("Invalid chunk size: {}", line.trim()))?;
+
+        if size == 0 {
+            // Read trailing \r\n after final chunk
+            line.clear();
+            reader.read_line(&mut line).await?;
+            break;
+        }
+
+        let mut chunk = vec![0u8; size];
+        reader.read_exact(&mut chunk).await?;
+        body.extend_from_slice(&chunk);
+
+        // Read trailing \r\n after chunk data
+        line.clear();
+        reader.read_line(&mut line).await?;
+    }
+
+    Ok(body)
 }
 
 fn build_proxy_status_line(status_code: u16, reason: &str) -> String {
@@ -339,6 +380,44 @@ mod tests {
 
         let result = extract_request_body(&mut reader, &headers).await.unwrap();
         assert!(result.is_some(), "Body should be read regardless of Content-Length casing");
+        assert_eq!(result.unwrap(), b"hello");
+    }
+
+    #[tokio::test]
+    async fn test_parse_chunked_body() {
+        let chunked_data = "5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+
+        let result = parse_chunked_body(&mut reader).await.unwrap();
+        assert_eq!(result, b"hello world");
+    }
+
+    #[tokio::test]
+    async fn test_parse_chunked_body_single_chunk() {
+        let chunked_data = "d\r\nhello, world!\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+
+        let result = parse_chunked_body(&mut reader).await.unwrap();
+        assert_eq!(result, b"hello, world!");
+    }
+
+    #[tokio::test]
+    async fn test_parse_chunked_body_empty() {
+        let chunked_data = "0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+
+        let result = parse_chunked_body(&mut reader).await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_extract_request_body_chunked_transfer_encoding() {
+        let chunked_data = "5\r\nhello\r\n0\r\n\r\n";
+        let mut reader = BufReader::new(Cursor::new(chunked_data));
+        let headers = vec![("transfer-encoding".to_string(), "chunked".to_string())];
+
+        let result = extract_request_body(&mut reader, &headers).await.unwrap();
+        assert!(result.is_some(), "Chunked body should be read");
         assert_eq!(result.unwrap(), b"hello");
     }
 
