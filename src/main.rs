@@ -42,37 +42,49 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     info!("Server listening on {}", listener.local_addr()?);
 
     let semaphore = Arc::new(Semaphore::new(rhoxy::constants::MAX_CONCURRENT_CONNECTIONS));
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
 
     loop {
-        match listener.accept().await {
-            Ok((stream, peer_addr)) => {
-                let permit = match semaphore.clone().try_acquire_owned() {
-                    Ok(permit) => permit,
-                    Err(_) => {
-                        warn!("[{peer_addr}] Connection rejected: max connections reached");
-                        drop(stream);
-                        continue;
-                    }
-                };
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, peer_addr)) => {
+                        let permit = match semaphore.clone().try_acquire_owned() {
+                            Ok(permit) => permit,
+                            Err(_) => {
+                                warn!("[{peer_addr}] Connection rejected: max connections reached");
+                                drop(stream);
+                                continue;
+                            }
+                        };
 
-                debug!("[{peer_addr}] Connection established");
+                        debug!("[{peer_addr}] Connection established");
 
-                tokio::spawn(async move {
-                    let _permit = permit;
-                    let timeout = Duration::from_secs(rhoxy::constants::CONNECTION_TIMEOUT_SECS);
-                    match tokio::time::timeout(timeout, handle_connection(stream, peer_addr)).await {
-                        Ok(Err(e)) => error!("[{peer_addr}] Error handling request: {}", e),
-                        Err(_) => warn!("[{peer_addr}] Connection timed out"),
-                        Ok(Ok(())) => {}
+                        tokio::spawn(async move {
+                            let _permit = permit;
+                            let timeout = Duration::from_secs(rhoxy::constants::CONNECTION_TIMEOUT_SECS);
+                            match tokio::time::timeout(timeout, handle_connection(stream, peer_addr)).await {
+                                Ok(Err(e)) => error!("[{peer_addr}] Error handling request: {}", e),
+                                Err(_) => warn!("[{peer_addr}] Connection timed out"),
+                                Ok(Ok(())) => {}
+                            }
+                            debug!("[{peer_addr}] Connection closed");
+                        });
                     }
-                    debug!("[{peer_addr}] Connection closed");
-                });
+                    Err(e) => {
+                        error!("Failed to accept connection: {}", e);
+                    }
+                }
             }
-            Err(e) => {
-                error!("Failed to accept connection: {}", e);
+            _ = &mut shutdown => {
+                info!("Shutdown signal received, stopping server");
+                break;
             }
         }
     }
+
+    Ok(())
 }
 
 async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -> Result<()> {
