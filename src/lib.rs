@@ -425,9 +425,7 @@ mod tests {
         assert!(is_private_ip(&IpAddr::V6("fc00::1".parse().unwrap())));
         assert!(is_private_ip(&IpAddr::V6("fd00::1".parse().unwrap())));
         assert!(is_private_ip(&IpAddr::V6(
-            "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
-                .parse()
-                .unwrap()
+            "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff".parse().unwrap()
         )));
         // fe80::/10 (link-local)
         assert!(is_private_ip(&IpAddr::V6("fe80::1".parse().unwrap())));
@@ -440,9 +438,7 @@ mod tests {
         assert!(is_private_ip(
             &"::ffff:127.0.0.1".parse::<IpAddr>().unwrap()
         ));
-        assert!(is_private_ip(
-            &"::ffff:10.0.0.1".parse::<IpAddr>().unwrap()
-        ));
+        assert!(is_private_ip(&"::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
         assert!(is_private_ip(
             &"::ffff:192.168.1.1".parse::<IpAddr>().unwrap()
         ));
@@ -450,9 +446,7 @@ mod tests {
             &"::ffff:169.254.169.254".parse::<IpAddr>().unwrap()
         ));
         // Public IPv4-mapped should NOT be flagged
-        assert!(!is_private_ip(
-            &"::ffff:8.8.8.8".parse::<IpAddr>().unwrap()
-        ));
+        assert!(!is_private_ip(&"::ffff:8.8.8.8".parse::<IpAddr>().unwrap()));
     }
 
     #[test]
