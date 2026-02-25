@@ -5,19 +5,58 @@ use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
+pub async fn read_line_bounded<R>(
+    reader: &mut R,
+    buf: &mut String,
+    max_len: usize,
+) -> Result<usize>
+where
+    R: AsyncBufReadExt + Unpin,
+{
+    let mut bytes = Vec::new();
+    let mut total = 0;
+    loop {
+        let available = reader.fill_buf().await?;
+        if available.is_empty() {
+            break;
+        }
+
+        if let Some(pos) = available.iter().position(|&b| b == b'\n') {
+            let to_consume = pos + 1;
+            if total + to_consume > max_len {
+                return Err(anyhow::anyhow!(
+                    "Line exceeds maximum length of {} bytes",
+                    max_len
+                ));
+            }
+            bytes.extend_from_slice(&available[..to_consume]);
+            reader.consume(to_consume);
+            total += to_consume;
+            break;
+        }
+
+        let len = available.len();
+        if total + len > max_len {
+            return Err(anyhow::anyhow!(
+                "Line exceeds maximum length of {} bytes",
+                max_len
+            ));
+        }
+        bytes.extend_from_slice(available);
+        reader.consume(len);
+        total += len;
+    }
+
+    *buf = String::from_utf8(bytes).map_err(|e| anyhow::anyhow!("Invalid UTF-8: {}", e))?;
+    Ok(total)
+}
+
 pub async fn extract_request_parts<R>(reader: &mut R) -> Result<(Method, String)>
 where
     R: AsyncBufReadExt + Unpin,
 {
     let mut first_line = String::new();
-    reader.read_line(&mut first_line).await?;
-    if first_line.len() > constants::MAX_REQUEST_LINE_LEN {
-        return Err(anyhow::anyhow!(
-            "Request line too long: {} bytes (max {})",
-            first_line.len(),
-            constants::MAX_REQUEST_LINE_LEN
-        ));
-    }
+    read_line_bounded(&mut *reader, &mut first_line, constants::MAX_REQUEST_LINE_LEN).await?;
     let first_line = first_line.trim();
 
     let parts: Vec<&str> = first_line.split_whitespace().collect();
@@ -191,5 +230,62 @@ mod tests {
         let result = extract_request_parts(&mut reader).await.unwrap();
         assert_eq!(result.0, Method::GET);
         assert_eq!(result.1, "/path");
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_within_limit() {
+        let data = "hello world\n";
+        let mut reader = Cursor::new(data);
+        let mut buf = String::new();
+        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        assert_eq!(buf, "hello world\n");
+        assert_eq!(bytes, 12);
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_rejects_oversized() {
+        let long_data = "X".repeat(100) + "\n";
+        let mut reader = Cursor::new(long_data);
+        let mut buf = String::new();
+        let result = read_line_bounded(&mut reader, &mut buf, 50).await;
+        assert!(result.is_err(), "Should reject lines exceeding the bound");
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_exact_limit() {
+        let data = "12345\n";
+        let mut reader = Cursor::new(data);
+        let mut buf = String::new();
+        let result = read_line_bounded(&mut reader, &mut buf, 6).await;
+        assert!(result.is_ok());
+        assert_eq!(buf, "12345\n");
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_one_over_limit() {
+        let data = "123456\n";
+        let mut reader = Cursor::new(data);
+        let mut buf = String::new();
+        let result = read_line_bounded(&mut reader, &mut buf, 6).await;
+        assert!(result.is_err(), "Should reject when line is one byte over limit");
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_eof_within_limit() {
+        let data = "no newline";
+        let mut reader = Cursor::new(data);
+        let mut buf = String::new();
+        let bytes = read_line_bounded(&mut reader, &mut buf, 100).await.unwrap();
+        assert_eq!(buf, "no newline");
+        assert_eq!(bytes, 10);
+    }
+
+    #[tokio::test]
+    async fn test_read_line_bounded_no_newline_exceeds_limit() {
+        let long_data = "X".repeat(100);
+        let mut reader = Cursor::new(long_data);
+        let mut buf = String::new();
+        let result = read_line_bounded(&mut reader, &mut buf, 50).await;
+        assert!(result.is_err(), "Should reject even without newline when exceeding limit");
     }
 }

@@ -175,15 +175,7 @@ where
 
     loop {
         line.clear();
-        reader.read_line(&mut line).await?;
-
-        if line.len() > constants::MAX_HEADER_LINE_LEN {
-            return Err(anyhow::anyhow!(
-                "Header line too long: {} bytes (max {})",
-                line.len(),
-                constants::MAX_HEADER_LINE_LEN
-            ));
-        }
+        crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN).await?;
 
         let trimmed = line.trim();
 
@@ -232,14 +224,15 @@ where
 
     loop {
         line.clear();
-        reader.read_line(&mut line).await?;
+        crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN).await?;
         let size = usize::from_str_radix(line.trim(), 16)
             .map_err(|_| anyhow::anyhow!("Invalid chunk size: {}", line.trim()))?;
 
         if size == 0 {
             // Read trailing \r\n after final chunk
             line.clear();
-            reader.read_line(&mut line).await?;
+            crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN)
+                .await?;
             break;
         }
 
@@ -249,7 +242,7 @@ where
 
         // Read trailing \r\n after chunk data
         line.clear();
-        reader.read_line(&mut line).await?;
+        crate::read_line_bounded(&mut *reader, &mut line, constants::MAX_HEADER_LINE_LEN).await?;
     }
 
     Ok(body)
