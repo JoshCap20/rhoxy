@@ -55,7 +55,7 @@ where
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
-            return Err(e.into());
+            return Ok(());
         }
     };
 
@@ -234,5 +234,26 @@ mod tests {
         let result = parse_host_port("example.com:65535").unwrap();
         assert_eq!(result.0, "example.com");
         assert_eq!(result.1, 65535);
+    }
+
+    // Run with: cargo test -- --ignored test_handle_request_connect_failure_returns_ok
+    #[ignore] // Requires network; ~75s due to TCP connect timeout on unreachable port
+    #[tokio::test]
+    async fn test_handle_request_connect_failure_returns_ok() {
+        // When upstream connection fails, handler should send 502 and return Ok(()),
+        // not Err — returning Err causes double-logging by the caller.
+        let headers = "Host: 8.8.8.8\r\n\r\n";
+        let mut reader = std::io::Cursor::new(headers);
+        let mut writer = Vec::new();
+
+        // 8.8.8.8 passes SSRF check (public IP), port 1 has nothing listening
+        let result = handle_request(&mut writer, &mut reader, "8.8.8.8:1".to_string()).await;
+
+        assert!(
+            result.is_ok(),
+            "Connection failure should return Ok after sending 502, not Err"
+        );
+        let response = String::from_utf8_lossy(&writer);
+        assert!(response.contains("502 Bad Gateway"));
     }
 }
