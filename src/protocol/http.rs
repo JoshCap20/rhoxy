@@ -192,11 +192,12 @@ async fn forward_response<W>(writer: &mut W, response: reqwest::Response) -> Res
 where
     W: AsyncWriteExt + Unpin,
 {
-    let status_line = build_proxy_status_line(
+    write_status_line(
+        writer,
         response.status().as_u16(),
         response.status().canonical_reason().unwrap_or(""),
-    );
-    writer.write_all(status_line.as_bytes()).await?;
+    )
+    .await?;
 
     for (key, value) in response.headers().iter() {
         writer.write_all(key.as_str().as_bytes()).await?;
@@ -313,8 +314,17 @@ where
     Ok(body)
 }
 
-fn build_proxy_status_line(status_code: u16, reason: &str) -> String {
-    format!("HTTP/1.1 {} {}\r\n", status_code, reason)
+async fn write_status_line<W>(writer: &mut W, status_code: u16, reason: &str) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+{
+    let mut buf = itoa::Buffer::new();
+    writer.write_all(b"HTTP/1.1 ").await?;
+    writer.write_all(buf.format(status_code).as_bytes()).await?;
+    writer.write_all(b" ").await?;
+    writer.write_all(reason.as_bytes()).await?;
+    writer.write_all(b"\r\n").await?;
+    Ok(())
 }
 
 fn is_hop_by_hop_header(header: &str) -> bool {
@@ -563,19 +573,22 @@ mod tests {
         assert_eq!(result.unwrap(), b"hello");
     }
 
-    #[test]
-    fn test_build_proxy_status_line_always_http_1_1() {
+    #[tokio::test]
+    async fn test_write_status_line_always_http_1_1() {
         // The proxy-to-client connection is always HTTP/1.1, regardless of
         // what protocol the upstream server used. HTTP/2 responses must be
         // downgraded when serialized back to the client.
-        let line = build_proxy_status_line(200, "OK");
-        assert_eq!(line, "HTTP/1.1 200 OK\r\n");
+        let mut buf = Vec::new();
+        write_status_line(&mut buf, 200, "OK").await.unwrap();
+        assert_eq!(buf, b"HTTP/1.1 200 OK\r\n");
 
-        let line = build_proxy_status_line(404, "Not Found");
-        assert_eq!(line, "HTTP/1.1 404 Not Found\r\n");
+        buf.clear();
+        write_status_line(&mut buf, 404, "Not Found").await.unwrap();
+        assert_eq!(buf, b"HTTP/1.1 404 Not Found\r\n");
 
-        let line = build_proxy_status_line(302, "Found");
-        assert_eq!(line, "HTTP/1.1 302 Found\r\n");
+        buf.clear();
+        write_status_line(&mut buf, 302, "Found").await.unwrap();
+        assert_eq!(buf, b"HTTP/1.1 302 Found\r\n");
     }
 
     #[tokio::test]
