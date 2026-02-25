@@ -51,7 +51,7 @@ where
         if crate::is_private_address(host) {
             tracing::warn!("Blocked HTTP request to private address: {}", url_string);
             writer
-                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .write_all(constants::FORBIDDEN_RESPONSE)
                 .await?;
             writer.flush().await?;
             return Ok(());
@@ -62,7 +62,7 @@ where
         if let Err(e) = crate::resolve_and_verify_non_private(host, port).await {
             tracing::warn!("Blocked HTTP request (DNS rebinding): {} - {}", url_string, e);
             writer
-                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .write_all(constants::FORBIDDEN_RESPONSE)
                 .await?;
             writer.flush().await?;
             return Ok(());

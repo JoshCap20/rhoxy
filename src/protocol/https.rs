@@ -29,7 +29,7 @@ where
     if crate::is_private_address(&host) {
         warn!("Blocked CONNECT to private address: {}", target);
         writer
-            .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+            .write_all(constants::FORBIDDEN_RESPONSE)
             .await?;
         writer.flush().await?;
         return Ok(());
@@ -41,7 +41,7 @@ where
         Err(e) => {
             warn!("Blocked CONNECT (DNS rebinding): {} - {}", target, e);
             writer
-                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .write_all(constants::FORBIDDEN_RESPONSE)
                 .await?;
             writer.flush().await?;
             return Ok(());
