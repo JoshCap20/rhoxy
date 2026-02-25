@@ -52,7 +52,7 @@ where
             let error_message = format!("Failed to connect to {}: {}", target, e);
             warn!("{}", error_message);
             writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
+                .write_all(constants::BAD_GATEWAY_RESPONSE)
                 .await?;
             writer.flush().await?;
             // Return Ok — the error is already logged and a 502 sent to the client.
