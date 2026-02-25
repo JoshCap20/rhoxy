@@ -45,9 +45,22 @@ where
 
     let body = extract_request_body(reader, &headers).await?;
 
+    let url = Url::parse(&url_string)?;
+
+    if let Some(host) = url.host_str() {
+        if super::https::is_private_address(host) {
+            tracing::warn!("Blocked HTTP request to private address: {}", url_string);
+            writer
+                .write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n")
+                .await?;
+            writer.flush().await?;
+            return Err(anyhow::anyhow!("Request to private address blocked: {}", url_string));
+        }
+    }
+
     let request = HttpRequest {
         method,
-        url: Url::parse(&url_string)?,
+        url,
         headers,
         body,
     };
