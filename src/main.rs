@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
+use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -44,8 +45,11 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
                 debug!("[{peer_addr}] Connection established");
 
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, peer_addr).await {
-                        error!("[{peer_addr}] Error handling request: {}", e);
+                    let timeout = Duration::from_secs(rhoxy::constants::CONNECTION_TIMEOUT_SECS);
+                    match tokio::time::timeout(timeout, handle_connection(stream, peer_addr)).await {
+                        Ok(Err(e)) => error!("[{peer_addr}] Error handling request: {}", e),
+                        Err(_) => warn!("[{peer_addr}] Connection timed out"),
+                        Ok(Ok(())) => {}
                     }
                     debug!("[{peer_addr}] Connection closed");
                 });
