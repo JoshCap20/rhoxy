@@ -99,7 +99,7 @@ where
     R: AsyncReadExt + Unpin,
 {
     let content_length = headers
-        .get("Content-Length")
+        .get("content-length")
         .and_then(|s| s.parse::<usize>().ok());
     let body = parse_request_body(reader, content_length).await?;
     Ok(body)
@@ -109,8 +109,7 @@ async fn send_request(request: &HttpRequest) -> Result<reqwest::Response> {
     let mut req = HTTP_CLIENT.request(request.method.clone(), request.url.clone());
 
     for (key, value) in &request.headers {
-        let key_lower = key.to_lowercase();
-        if !is_hop_by_hop_header(&key_lower) {
+        if !is_hop_by_hop_header(key) {
             req = req.header(key, value);
         }
     }
@@ -163,7 +162,7 @@ where
         }
 
         if let Some((key, value)) = line.split_once(':') {
-            headers.insert(key.trim().to_string(), value.trim().to_string());
+            headers.insert(key.trim().to_lowercase(), value.trim().to_string());
         } else {
             return Err(anyhow::anyhow!("Invalid header line: {}", line));
         }
@@ -251,9 +250,9 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(result.len(), 3);
-        assert_eq!(result.get("Host").unwrap(), "example.com");
-        assert_eq!(result.get("Content-Type").unwrap(), "application/json");
-        assert_eq!(result.get("Content-Length").unwrap(), "100");
+        assert_eq!(result.get("host").unwrap(), "example.com");
+        assert_eq!(result.get("content-type").unwrap(), "application/json");
+        assert_eq!(result.get("content-length").unwrap(), "100");
     }
 
     #[tokio::test]
@@ -272,8 +271,8 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await.unwrap();
-        assert_eq!(result.get("Host").unwrap(), "example.com");
-        assert_eq!(result.get("Content-Type").unwrap(), "application/json");
+        assert_eq!(result.get("host").unwrap(), "example.com");
+        assert_eq!(result.get("content-type").unwrap(), "application/json");
     }
 
     #[tokio::test]
@@ -298,7 +297,7 @@ mod tests {
 
         let result = parse_request_headers(&mut reader).await.unwrap();
         assert_eq!(
-            result.get("Authorization").unwrap(),
+            result.get("authorization").unwrap(),
             "Bearer token:with:colons"
         );
     }
@@ -309,7 +308,19 @@ mod tests {
         let mut reader = BufReader::new(Cursor::new(headers_data));
 
         let result = parse_request_headers(&mut reader).await.unwrap();
-        assert_eq!(result.get("Empty-Header").unwrap(), "");
+        assert_eq!(result.get("empty-header").unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn test_extract_request_body_case_insensitive_content_length() {
+        let body_data = b"hello";
+        let mut reader = BufReader::new(Cursor::new(body_data));
+        let mut headers = HashMap::new();
+        headers.insert("content-length".to_string(), "5".to_string());
+
+        let result = extract_request_body(&mut reader, &headers).await.unwrap();
+        assert!(result.is_some(), "Body should be read regardless of Content-Length casing");
+        assert_eq!(result.unwrap(), b"hello");
     }
 
     #[test]
