@@ -1,8 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -39,12 +41,24 @@ async fn start_server(host: &str, port: u16) -> Result<()> {
     let listener = TcpListener::bind((host, port)).await?;
     info!("Server listening on {}", listener.local_addr()?);
 
+    let semaphore = Arc::new(Semaphore::new(rhoxy::constants::MAX_CONCURRENT_CONNECTIONS));
+
     loop {
         match listener.accept().await {
             Ok((stream, peer_addr)) => {
+                let permit = match semaphore.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        warn!("[{peer_addr}] Connection rejected: max connections reached");
+                        drop(stream);
+                        continue;
+                    }
+                };
+
                 debug!("[{peer_addr}] Connection established");
 
                 tokio::spawn(async move {
+                    let _permit = permit;
                     let timeout = Duration::from_secs(rhoxy::constants::CONNECTION_TIMEOUT_SECS);
                     match tokio::time::timeout(timeout, handle_connection(stream, peer_addr)).await {
                         Ok(Err(e)) => error!("[{peer_addr}] Error handling request: {}", e),
