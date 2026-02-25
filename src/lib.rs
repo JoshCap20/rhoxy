@@ -76,6 +76,10 @@ pub fn is_private_address(host: &str) -> bool {
         return true;
     }
 
+    // Strip IPv6 zone ID (e.g., "fe80::1%eth0" → "fe80::1") since Rust's
+    // IpAddr parser rejects the % suffix.
+    let host = host.split('%').next().unwrap_or(host);
+
     if let Ok(addr) = host.parse::<std::net::IpAddr>() {
         return is_private_ip(&addr);
     }
@@ -454,6 +458,15 @@ mod tests {
         assert!(is_private_address("fc00::1"));
         assert!(is_private_address("fd12:3456::1"));
         assert!(is_private_address("fe80::1"));
+    }
+
+    #[test]
+    fn test_is_private_address_v6_zone_id() {
+        // IPv6 link-local with zone ID — Rust's IpAddr parser rejects the %
+        // suffix, so we must strip it before parsing.
+        assert!(is_private_address("fe80::1%eth0"));
+        assert!(is_private_address("fe80::1%25eth0"));
+        assert!(is_private_address("::1%lo"));
     }
 
     #[test]
