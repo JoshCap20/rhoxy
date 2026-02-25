@@ -72,19 +72,16 @@ where
 }
 
 pub fn is_private_address(host: &str) -> bool {
-    if host == "localhost" || host == "0.0.0.0" || host == "::1" {
+    if host == "localhost" {
         return true;
     }
 
-    if let Ok(addr) = host.parse::<std::net::Ipv4Addr>() {
-        return addr.is_loopback()
-            || addr.is_private()
-            || addr.is_link_local()
-            || addr.is_unspecified();
-    }
+    // Strip IPv6 zone ID (e.g., "fe80::1%eth0" → "fe80::1") since Rust's
+    // IpAddr parser rejects the % suffix.
+    let host = host.split('%').next().unwrap_or(host);
 
-    if let Ok(addr) = host.parse::<std::net::Ipv6Addr>() {
-        return addr.is_loopback() || addr.is_unspecified();
+    if let Ok(addr) = host.parse::<std::net::IpAddr>() {
+        return is_private_ip(&addr);
     }
 
     false
@@ -92,11 +89,30 @@ pub fn is_private_address(host: &str) -> bool {
 
 pub fn is_private_ip(ip: &std::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(addr) => {
-            addr.is_loopback() || addr.is_private() || addr.is_link_local() || addr.is_unspecified()
+        std::net::IpAddr::V4(addr) => is_private_ipv4(addr),
+        std::net::IpAddr::V6(addr) => {
+            if addr.is_loopback() || addr.is_unspecified() {
+                return true;
+            }
+            // Unique-local (fc00::/7) — IPv6 equivalent of RFC 1918
+            if (addr.segments()[0] & 0xfe00) == 0xfc00 {
+                return true;
+            }
+            // Link-local (fe80::/10)
+            if (addr.segments()[0] & 0xffc0) == 0xfe80 {
+                return true;
+            }
+            // IPv4-mapped IPv6 (::ffff:0:0/96) — check the embedded IPv4
+            if let Some(v4) = addr.to_ipv4_mapped() {
+                return is_private_ipv4(&v4);
+            }
+            false
         }
-        std::net::IpAddr::V6(addr) => addr.is_loopback() || addr.is_unspecified(),
     }
+}
+
+fn is_private_ipv4(addr: &std::net::Ipv4Addr) -> bool {
+    addr.is_loopback() || addr.is_private() || addr.is_link_local() || addr.is_unspecified()
 }
 
 pub async fn resolve_and_verify_non_private(
@@ -404,6 +420,60 @@ mod tests {
         assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
         assert!(is_private_ip(&IpAddr::V6(Ipv6Addr::UNSPECIFIED)));
         assert!(!is_private_ip(&IpAddr::V6("2001:db8::1".parse().unwrap())));
+    }
+
+    #[test]
+    fn test_is_private_ip_v6_unique_local() {
+        use std::net::IpAddr;
+        // fc00::/7 (unique-local) — IPv6 equivalent of RFC 1918 private ranges
+        assert!(is_private_ip(&IpAddr::V6("fc00::1".parse().unwrap())));
+        assert!(is_private_ip(&IpAddr::V6("fd00::1".parse().unwrap())));
+        assert!(is_private_ip(&IpAddr::V6(
+            "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff".parse().unwrap()
+        )));
+        // fe80::/10 (link-local)
+        assert!(is_private_ip(&IpAddr::V6("fe80::1".parse().unwrap())));
+    }
+
+    #[test]
+    fn test_is_private_ip_v4_mapped_v6() {
+        use std::net::IpAddr;
+        // IPv4-mapped IPv6 addresses must be checked against IPv4 private ranges
+        assert!(is_private_ip(
+            &"::ffff:127.0.0.1".parse::<IpAddr>().unwrap()
+        ));
+        assert!(is_private_ip(&"::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_private_ip(
+            &"::ffff:192.168.1.1".parse::<IpAddr>().unwrap()
+        ));
+        assert!(is_private_ip(
+            &"::ffff:169.254.169.254".parse::<IpAddr>().unwrap()
+        ));
+        // Public IPv4-mapped should NOT be flagged
+        assert!(!is_private_ip(&"::ffff:8.8.8.8".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn test_is_private_address_v6_unique_local() {
+        assert!(is_private_address("fc00::1"));
+        assert!(is_private_address("fd12:3456::1"));
+        assert!(is_private_address("fe80::1"));
+    }
+
+    #[test]
+    fn test_is_private_address_v6_zone_id() {
+        // IPv6 link-local with zone ID — Rust's IpAddr parser rejects the %
+        // suffix, so we must strip it before parsing.
+        assert!(is_private_address("fe80::1%eth0"));
+        assert!(is_private_address("fe80::1%25eth0"));
+        assert!(is_private_address("::1%lo"));
+    }
+
+    #[test]
+    fn test_is_private_address_v4_mapped_v6() {
+        assert!(is_private_address("::ffff:127.0.0.1"));
+        assert!(is_private_address("::ffff:10.0.0.1"));
+        assert!(!is_private_address("::ffff:8.8.8.8"));
     }
 
     #[tokio::test]

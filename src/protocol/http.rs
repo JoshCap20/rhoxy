@@ -7,7 +7,10 @@ use tracing::{debug, error};
 
 use crate::constants;
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+/// Shared client configuration applied to both the static pool and per-host
+/// pinned clients. Centralised here to prevent timeout/policy drift between
+/// the two paths.
+fn base_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(10))
@@ -19,6 +22,10 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .http2_keep_alive_while_idle(true)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
+}
+
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    base_client_builder()
         .build()
         .expect("Failed to build HTTP client")
 });
@@ -29,6 +36,7 @@ struct HttpRequest {
     url: Url,
     headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
+    resolved_addrs: Vec<std::net::SocketAddr>,
 }
 
 pub async fn handle_request<W, R>(
@@ -47,6 +55,7 @@ where
 
     let url = Url::parse(&url_string)?;
 
+    let mut resolved_addrs = Vec::new();
     if let Some(host) = url.host_str() {
         if crate::is_private_address(host) {
             tracing::warn!("Blocked HTTP request to private address: {}", url_string);
@@ -57,15 +66,18 @@ where
 
         // Resolve DNS and verify resolved IPs are not private (prevents DNS rebinding)
         let port = url.port().unwrap_or(80);
-        if let Err(e) = crate::resolve_and_verify_non_private(host, port).await {
-            tracing::warn!(
-                "Blocked HTTP request (DNS rebinding): {} - {}",
-                url_string,
-                e
-            );
-            writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
-            writer.flush().await?;
-            return Ok(());
+        match crate::resolve_and_verify_non_private(host, port).await {
+            Ok(addrs) => resolved_addrs = addrs,
+            Err(e) => {
+                tracing::warn!(
+                    "Blocked HTTP request (DNS rebinding): {} - {}",
+                    url_string,
+                    e
+                );
+                writer.write_all(constants::FORBIDDEN_RESPONSE).await?;
+                writer.flush().await?;
+                return Ok(());
+            }
         }
     }
 
@@ -74,6 +86,7 @@ where
         url,
         headers,
         body,
+        resolved_addrs,
     };
 
     debug!("Received HTTP request: {:?}", request);
@@ -144,7 +157,26 @@ where
 }
 
 async fn send_request(request: HttpRequest) -> Result<reqwest::Response> {
-    let mut req = HTTP_CLIENT.request(request.method, request.url);
+    // Pin DNS to the pre-verified addresses to close the TOCTOU gap: without
+    // pinning, reqwest re-resolves independently and an attacker with a short-TTL
+    // record could return a private IP on the second resolution.
+    //
+    // We build a per-host client from base_client_builder() so all timeout,
+    // pooling, and keepalive settings stay in sync with HTTP_CLIENT.
+    let client = match (request.resolved_addrs.is_empty(), request.url.host_str()) {
+        (false, Some(host)) => {
+            let mut builder = base_client_builder();
+            for addr in &request.resolved_addrs {
+                builder = builder.resolve(host, *addr);
+            }
+            builder.build()?
+        }
+        // Unreachable in normal proxy operation: handle_request always populates
+        // resolved_addrs when a host is present. Defensive fallback only.
+        _ => HTTP_CLIENT.clone(),
+    };
+
+    let mut req = client.request(request.method, request.url);
 
     for (key, value) in &request.headers {
         if !is_hop_by_hop_header(key) {
@@ -570,6 +602,7 @@ mod tests {
             url: Url::parse(&format!("http://{}/test", addr)).unwrap(),
             headers: Vec::new(),
             body: None,
+            resolved_addrs: Vec::new(),
         };
 
         let response = send_request(request)
@@ -629,6 +662,46 @@ mod tests {
         );
         let response = String::from_utf8_lossy(&writer);
         assert!(response.contains("403 Forbidden"));
+    }
+
+    #[tokio::test]
+    async fn test_send_request_uses_resolved_addrs() {
+        // Start a local HTTP server
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = stream.read(&mut buf).await;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+                .await
+                .unwrap();
+        });
+
+        // Use a hostname that does NOT resolve in DNS.
+        // With DNS pinning (resolved_addrs), reqwest connects to the local server.
+        // Without it, reqwest would fail to resolve the hostname.
+        let request = HttpRequest {
+            method: Method::GET,
+            url: Url::parse(&format!(
+                "http://nonexistent.test.invalid:{}/test",
+                addr.port()
+            ))
+            .unwrap(),
+            headers: Vec::new(),
+            body: None,
+            resolved_addrs: vec![addr],
+        };
+
+        let result = send_request(request).await;
+        assert!(
+            result.is_ok(),
+            "Should connect using pre-resolved addrs, not re-resolving DNS: {:?}",
+            result.err()
+        );
+        assert_eq!(result.unwrap().status().as_u16(), 200);
     }
 
     #[tokio::test]

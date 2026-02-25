@@ -55,7 +55,9 @@ where
                 .write_all(constants::BAD_GATEWAY_RESPONSE_HEADER)
                 .await?;
             writer.flush().await?;
-            return Err(e.into());
+            // Return Ok — the error is already logged and a 502 sent to the client.
+            // Returning Err here would cause the caller to log the same error again.
+            return Ok(());
         }
     };
 
