@@ -145,20 +145,10 @@ pub async fn resolve_and_verify_non_private(
 }
 
 pub fn is_health_check(url: &str) -> bool {
-    // Strip query string if present
-    let url = url.split('?').next().unwrap_or(url);
-
-    if url == constants::HEALTH_ENDPOINT_PATH {
-        return true;
-    }
-    // For absolute URLs like http://host:port/health, extract the path
-    if let Some(scheme_end) = url.find("://") {
-        let after_authority = &url[scheme_end + 3..];
-        if let Some(path_start) = after_authority.find('/') {
-            return &after_authority[path_start..] == constants::HEALTH_ENDPOINT_PATH;
-        }
-    }
-    false
+    // Only match relative /health — this targets the proxy itself.
+    // Absolute URLs (http://host/health) target upstream servers and must be forwarded.
+    let path = url.split('?').next().unwrap_or(url);
+    path == constants::HEALTH_ENDPOINT_PATH
 }
 
 pub async fn handle_health_check<W>(writer: &mut W) -> Result<()>
@@ -276,10 +266,12 @@ mod tests {
     }
 
     #[test]
-    fn test_is_health_check_matches_absolute_url() {
-        assert!(is_health_check("http://localhost:8080/health"));
-        assert!(is_health_check("http://127.0.0.1:8081/health"));
-        assert!(is_health_check("http://proxy.example.com/health"));
+    fn test_is_health_check_ignores_absolute_url() {
+        // Absolute URLs target upstream servers, not the proxy itself.
+        // Only relative /health should be intercepted.
+        assert!(!is_health_check("http://localhost:8080/health"));
+        assert!(!is_health_check("http://127.0.0.1:8081/health"));
+        assert!(!is_health_check("http://api.example.com/health"));
     }
 
     #[test]
@@ -292,7 +284,8 @@ mod tests {
     #[test]
     fn test_is_health_check_with_query_string() {
         assert!(is_health_check("/health?foo=bar"));
-        assert!(is_health_check("http://localhost:8080/health?check=1"));
+        // Absolute URL with query string targets upstream, not proxy
+        assert!(!is_health_check("http://localhost:8080/health?check=1"));
     }
 
     #[tokio::test]
