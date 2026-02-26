@@ -100,9 +100,7 @@ where
                 e,
                 e.source()
             );
-            writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE)
-                .await?;
+            writer.write_all(constants::BAD_GATEWAY_RESPONSE).await?;
             writer.flush().await?;
             return Ok(());
         }
@@ -114,9 +112,7 @@ where
         }
         Err(e) => {
             error!("Failed to forward response: {}", e);
-            writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE)
-                .await?;
+            writer.write_all(constants::BAD_GATEWAY_RESPONSE).await?;
             writer.flush().await?;
             return Ok(());
         }

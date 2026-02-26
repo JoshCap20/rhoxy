@@ -13,3 +13,8 @@ http = "1.3.1"
 anyhow = "1.0.99"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+# Internal feature for integration tests: allows bypassing SSRF checks
+# so tests can use localhost upstreams. Never enable in production.
+_test-support = []

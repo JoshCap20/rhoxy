@@ -1,6 +1,21 @@
 pub mod constants;
 pub mod protocol;
 
+#[cfg(feature = "_test-support")]
+pub mod test_support {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static BYPASS_SSRF: AtomicBool = AtomicBool::new(false);
+
+    pub fn set_ssrf_bypass(enabled: bool) {
+        BYPASS_SSRF.store(enabled, Ordering::SeqCst);
+    }
+
+    pub(crate) fn is_ssrf_bypassed() -> bool {
+        BYPASS_SSRF.load(Ordering::SeqCst)
+    }
+}
+
 use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
@@ -71,6 +86,11 @@ where
 }
 
 pub fn is_private_address(host: &str) -> bool {
+    #[cfg(feature = "_test-support")]
+    if test_support::is_ssrf_bypassed() {
+        return false;
+    }
+
     if host == "localhost" {
         return true;
     }
@@ -87,6 +107,11 @@ pub fn is_private_address(host: &str) -> bool {
 }
 
 pub fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    #[cfg(feature = "_test-support")]
+    if test_support::is_ssrf_bypassed() {
+        return false;
+    }
+
     match ip {
         std::net::IpAddr::V4(addr) => is_private_ipv4(addr),
         std::net::IpAddr::V6(addr) => {
