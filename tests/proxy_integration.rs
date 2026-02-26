@@ -17,9 +17,25 @@ async fn test_health_check_returns_200() {
         response
     );
     assert!(
-        response.contains("OK"),
-        "Expected 'OK' body, got: {}",
+        response.ends_with("OK"),
+        "Expected 'OK' body at end of response, got: {}",
         response
+    );
+}
+
+// ---------------------------------------------------------------------------
+// SSRF bypass sanity check
+// ---------------------------------------------------------------------------
+
+/// Verify SSRF protection is active in this test binary. If this fails, the
+/// `_test-support` feature flag or a stray `set_ssrf_bypass(true)` is leaking
+/// bypass state into tests that depend on SSRF blocking.
+#[cfg(feature = "_test-support")]
+#[test]
+fn test_ssrf_bypass_not_active_in_integration_tests() {
+    assert!(
+        rhoxy::is_private_address("127.0.0.1"),
+        "SSRF protection should be active — bypass must not leak into this binary"
     );
 }
 

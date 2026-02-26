@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
@@ -150,4 +150,33 @@ pub async fn send_raw(addr: std::net::SocketAddr, request: &[u8]) -> String {
         .expect("Failed to read response");
 
     String::from_utf8_lossy(&response).into_owned()
+}
+
+/// Read HTTP headers and body from a stream, as an upstream server would.
+/// Parses Content-Length (case-insensitive) and reads exactly that many bytes.
+/// Returns the body bytes (empty if no Content-Length).
+#[allow(dead_code)]
+pub async fn read_upstream_body<R>(reader: &mut R) -> Vec<u8>
+where
+    R: AsyncBufReadExt + AsyncReadExt + Unpin,
+{
+    let mut content_length = 0usize;
+    let mut line = String::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        if line.trim().is_empty() {
+            break;
+        }
+        let lower = line.to_lowercase();
+        if let Some(val) = lower.strip_prefix("content-length:") {
+            content_length = val.trim().parse().unwrap_or(0);
+        }
+    }
+
+    let mut body = vec![0u8; content_length];
+    if content_length > 0 {
+        reader.read_exact(&mut body).await.unwrap();
+    }
+    body
 }

@@ -10,7 +10,7 @@ mod common;
 
 use std::sync::Once;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
 static INIT: Once = Once::new();
@@ -54,7 +54,11 @@ async fn test_http_get_forwarding() {
     );
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
-    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("200 OK"),
+        "Expected 200 OK, got: {}",
+        response
+    );
     assert!(
         response.contains("hello"),
         "Expected body 'hello', got: {}",
@@ -75,23 +79,7 @@ async fn test_http_post_with_body() {
         let mut reader = BufReader::new(reader);
         let mut writer = BufWriter::new(writer);
 
-        let mut content_length = 0usize;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim().is_empty() {
-                break;
-            }
-            if let Some(val) = line.strip_prefix("content-length: ") {
-                content_length = val.trim().parse().unwrap_or(0);
-            }
-        }
-
-        let mut body = vec![0u8; content_length];
-        if content_length > 0 {
-            reader.read_exact(&mut body).await.unwrap();
-        }
+        let body = common::read_upstream_body(&mut reader).await;
 
         let resp_body = format!("received {} bytes", body.len());
         let resp = format!(
@@ -114,7 +102,11 @@ async fn test_http_post_with_body() {
     );
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
-    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("200 OK"),
+        "Expected 200 OK, got: {}",
+        response
+    );
     let expected = format!("received {} bytes", body.len());
     assert!(
         response.contains(&expected),
@@ -188,7 +180,11 @@ async fn test_http_hop_by_hop_headers_stripped_and_others_forwarded() {
     );
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
-    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("200 OK"),
+        "Expected 200 OK, got: {}",
+        response
+    );
     assert!(
         response.contains("STRIPPED_AND_KEPT"),
         "Expected hop-by-hop stripped and non-hop-by-hop kept, got: {}",
@@ -366,7 +362,7 @@ async fn test_proxy_handles_multiple_sequential_requests() {
         );
         let response = common::send_raw(proxy, request.as_bytes()).await;
         assert!(
-            response.contains("200"),
+            response.contains("200 OK"),
             "Request {} failed, got: {}",
             i,
             response
@@ -401,7 +397,7 @@ async fn test_proxy_handles_concurrent_requests() {
     for (i, handle) in handles.into_iter().enumerate() {
         let response = handle.await.expect("Task panicked");
         assert!(
-            response.contains("200"),
+            response.contains("200 OK"),
             "Concurrent request {} failed, got: {}",
             i,
             response
@@ -426,23 +422,7 @@ async fn test_http_post_large_body() {
         let mut reader = BufReader::new(reader);
         let mut writer = BufWriter::new(writer);
 
-        let mut content_length = 0usize;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim().is_empty() {
-                break;
-            }
-            if let Some(val) = line.strip_prefix("content-length: ") {
-                content_length = val.trim().parse().unwrap_or(0);
-            }
-        }
-
-        let mut body = vec![0u8; content_length];
-        if content_length > 0 {
-            reader.read_exact(&mut body).await.unwrap();
-        }
+        let body = common::read_upstream_body(&mut reader).await;
 
         let resp_body = format!("received {} bytes", body.len());
         let resp = format!(
@@ -466,7 +446,11 @@ async fn test_http_post_large_body() {
     );
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
-    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("200 OK"),
+        "Expected 200 OK, got: {}",
+        response
+    );
     let expected = format!("received {} bytes", body_size);
     assert!(
         response.contains(&expected),
@@ -492,23 +476,7 @@ async fn test_http_post_chunked_transfer_encoding() {
         let mut reader = BufReader::new(reader);
         let mut writer = BufWriter::new(writer);
 
-        let mut content_length = 0usize;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim().is_empty() {
-                break;
-            }
-            if let Some(val) = line.strip_prefix("content-length: ") {
-                content_length = val.trim().parse().unwrap_or(0);
-            }
-        }
-
-        let mut body = vec![0u8; content_length];
-        if content_length > 0 {
-            reader.read_exact(&mut body).await.unwrap();
-        }
+        let body = common::read_upstream_body(&mut reader).await;
 
         let body_str = String::from_utf8_lossy(&body);
         let resp_body = format!("body={}", body_str);
@@ -529,7 +497,11 @@ async fn test_http_post_chunked_transfer_encoding() {
     );
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
-    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("200 OK"),
+        "Expected 200 OK, got: {}",
+        response
+    );
     assert!(
         response.contains("body=Hello World!"),
         "Expected chunked body reassembled as 'Hello World!', got: {}",
