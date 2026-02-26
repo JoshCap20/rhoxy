@@ -51,9 +51,7 @@ where
         Err(e) => {
             let error_message = format!("Failed to connect to {}: {}", target, e);
             warn!("{}", error_message);
-            writer
-                .write_all(constants::BAD_GATEWAY_RESPONSE)
-                .await?;
+            writer.write_all(constants::BAD_GATEWAY_RESPONSE).await?;
             writer.flush().await?;
             // Return Ok — the error is already logged and a 502 sent to the client.
             // Returning Err here would cause the caller to log the same error again.

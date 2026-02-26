@@ -1,6 +1,21 @@
 pub mod constants;
 pub mod protocol;
 
+#[cfg(feature = "_test-support")]
+pub mod test_support {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static BYPASS_SSRF: AtomicBool = AtomicBool::new(false);
+
+    pub fn set_ssrf_bypass(enabled: bool) {
+        BYPASS_SSRF.store(enabled, Ordering::SeqCst);
+    }
+
+    pub(crate) fn is_ssrf_bypassed() -> bool {
+        BYPASS_SSRF.load(Ordering::SeqCst)
+    }
+}
+
 use ::http::Method;
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
@@ -71,6 +86,11 @@ where
 }
 
 pub fn is_private_address(host: &str) -> bool {
+    #[cfg(feature = "_test-support")]
+    if test_support::is_ssrf_bypassed() {
+        return false;
+    }
+
     if host == "localhost" {
         return true;
     }
@@ -87,6 +107,11 @@ pub fn is_private_address(host: &str) -> bool {
 }
 
 pub fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    #[cfg(feature = "_test-support")]
+    if test_support::is_ssrf_bypassed() {
+        return false;
+    }
+
     match ip {
         std::net::IpAddr::V4(addr) => is_private_ipv4(addr),
         std::net::IpAddr::V6(addr) => {
@@ -156,6 +181,46 @@ where
 {
     writer.write_all(constants::HEALTH_CHECK_RESPONSE).await?;
     writer.flush().await?;
+    Ok(())
+}
+
+pub async fn handle_connection<W, R>(
+    writer: &mut W,
+    reader: &mut R,
+    peer_addr: Option<std::net::SocketAddr>,
+) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
+{
+    let (method, url_string) = match extract_request_parts(reader).await {
+        Ok(parts) => parts,
+        Err(e) => {
+            match peer_addr {
+                Some(addr) => tracing::warn!("[{addr}] Malformed request: {e}"),
+                None => tracing::warn!("Malformed request: {e}"),
+            }
+            let _ = writer.write_all(constants::BAD_REQUEST_RESPONSE).await;
+            let _ = writer.flush().await;
+            return Ok(());
+        }
+    };
+
+    let protocol = protocol::Protocol::from_method(&method);
+
+    match peer_addr {
+        Some(addr) => tracing::info!("[{addr}::{protocol}] {url_string}"),
+        None => tracing::info!("[{protocol}] {url_string}"),
+    }
+
+    if is_health_check(&url_string) {
+        return handle_health_check(writer).await;
+    }
+
+    protocol
+        .handle_request(writer, reader, method, url_string)
+        .await?;
+
     Ok(())
 }
 

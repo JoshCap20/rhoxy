@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -97,30 +97,5 @@ async fn handle_connection(stream: TcpStream, peer_addr: std::net::SocketAddr) -
     let mut reader = BufReader::new(reader);
     let mut writer = BufWriter::new(writer);
 
-    let (method, url_string) = match rhoxy::extract_request_parts(&mut reader).await {
-        Ok(parts) => parts,
-        Err(e) => {
-            warn!("[{peer_addr}] Malformed request: {e}");
-            // Best-effort response — client may have already disconnected.
-            let _ = writer
-                .write_all(rhoxy::constants::BAD_REQUEST_RESPONSE)
-                .await;
-            let _ = writer.flush().await;
-            return Ok(());
-        }
-    };
-
-    let protocol = rhoxy::protocol::Protocol::from_method(&method);
-
-    info!("[{peer_addr}::{protocol}] {url_string}");
-
-    if rhoxy::is_health_check(&url_string) {
-        return rhoxy::handle_health_check(&mut writer).await;
-    }
-
-    protocol
-        .handle_request(&mut writer, &mut reader, method, url_string)
-        .await?;
-
-    Ok(())
+    rhoxy::handle_connection(&mut writer, &mut reader, Some(peer_addr)).await
 }
