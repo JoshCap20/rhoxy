@@ -24,6 +24,19 @@ fn setup() {
 }
 
 // ---------------------------------------------------------------------------
+// SSRF bypass verification
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_ssrf_bypass_active() {
+    setup();
+    assert!(
+        !rhoxy::is_private_address("127.0.0.1"),
+        "SSRF bypass should be active in this test binary"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // HTTP forwarding
 // ---------------------------------------------------------------------------
 
@@ -102,8 +115,9 @@ async fn test_http_post_with_body() {
     let response = common::send_raw(proxy, request.as_bytes()).await;
 
     assert!(response.contains("200"), "Expected 200, got: {}", response);
+    let expected = format!("received {} bytes", body.len());
     assert!(
-        response.contains("received 17 bytes"),
+        response.contains(&expected),
         "Expected upstream to receive body, got: {}",
         response
     );

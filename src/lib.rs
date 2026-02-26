@@ -184,6 +184,46 @@ where
     Ok(())
 }
 
+pub async fn handle_connection<W, R>(
+    writer: &mut W,
+    reader: &mut R,
+    peer_addr: Option<std::net::SocketAddr>,
+) -> Result<()>
+where
+    W: AsyncWriteExt + Unpin,
+    R: AsyncBufReadExt + Unpin,
+{
+    let (method, url_string) = match extract_request_parts(reader).await {
+        Ok(parts) => parts,
+        Err(e) => {
+            match peer_addr {
+                Some(addr) => tracing::warn!("[{addr}] Malformed request: {e}"),
+                None => tracing::warn!("Malformed request: {e}"),
+            }
+            let _ = writer.write_all(constants::BAD_REQUEST_RESPONSE).await;
+            let _ = writer.flush().await;
+            return Ok(());
+        }
+    };
+
+    let protocol = protocol::Protocol::from_method(&method);
+
+    match peer_addr {
+        Some(addr) => tracing::info!("[{addr}::{protocol}] {url_string}"),
+        None => tracing::info!("[{protocol}] {url_string}"),
+    }
+
+    if is_health_check(&url_string) {
+        return handle_health_check(writer).await;
+    }
+
+    protocol
+        .handle_request(writer, reader, method, url_string)
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

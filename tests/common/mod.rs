@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 
-/// Spawn a proxy handler that mirrors `main.rs::handle_connection`.
+/// Spawn a proxy using the same `handle_connection` as production.
 /// Accepts connections in a loop until the listener is dropped.
 pub async fn start_proxy() -> std::net::SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -18,26 +18,7 @@ pub async fn start_proxy() -> std::net::SocketAddr {
                 let mut reader = BufReader::new(reader);
                 let mut writer = BufWriter::new(writer);
 
-                let (method, url_string) = match rhoxy::extract_request_parts(&mut reader).await {
-                    Ok(parts) => parts,
-                    Err(_) => {
-                        let _ = writer
-                            .write_all(rhoxy::constants::BAD_REQUEST_RESPONSE)
-                            .await;
-                        let _ = writer.flush().await;
-                        return;
-                    }
-                };
-
-                if rhoxy::is_health_check(&url_string) {
-                    let _ = rhoxy::handle_health_check(&mut writer).await;
-                    return;
-                }
-
-                let protocol = rhoxy::protocol::Protocol::from_method(&method);
-                let _ = protocol
-                    .handle_request(&mut writer, &mut reader, method, url_string)
-                    .await;
+                let _ = rhoxy::handle_connection(&mut writer, &mut reader, None).await;
             });
         }
     });
