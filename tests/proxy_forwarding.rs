@@ -373,3 +373,166 @@ async fn test_proxy_handles_multiple_sequential_requests() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Concurrent requests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_proxy_handles_concurrent_requests() {
+    setup();
+
+    let upstream =
+        common::start_looping_upstream(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK").await;
+    let proxy = common::start_proxy().await;
+
+    let mut handles = Vec::new();
+    for i in 0..10 {
+        let request = format!(
+            "GET http://{}/path/{} HTTP/1.1\r\nHost: {}\r\n\r\n",
+            upstream, i, upstream
+        );
+        let request_bytes = request.into_bytes();
+        handles.push(tokio::spawn(async move {
+            common::send_raw(proxy, &request_bytes).await
+        }));
+    }
+
+    for (i, handle) in handles.into_iter().enumerate() {
+        let response = handle.await.expect("Task panicked");
+        assert!(
+            response.contains("200"),
+            "Concurrent request {} failed, got: {}",
+            i,
+            response
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Large body forwarding
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_http_post_large_body() {
+    setup();
+
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_addr = upstream_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let (stream, _) = upstream_listener.accept().await.unwrap();
+        let (reader, writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+        let mut writer = BufWriter::new(writer);
+
+        let mut content_length = 0usize;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line.trim().is_empty() {
+                break;
+            }
+            if let Some(val) = line.strip_prefix("content-length: ") {
+                content_length = val.trim().parse().unwrap_or(0);
+            }
+        }
+
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            reader.read_exact(&mut body).await.unwrap();
+        }
+
+        let resp_body = format!("received {} bytes", body.len());
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            resp_body.len(),
+            resp_body
+        );
+        writer.write_all(resp.as_bytes()).await.unwrap();
+        writer.flush().await.unwrap();
+    });
+
+    let proxy = common::start_proxy().await;
+    let body_size = 128 * 1024; // 128 KiB
+    let body = "X".repeat(body_size);
+    let request = format!(
+        "POST http://{}/submit HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\n\r\n{}",
+        upstream_addr,
+        upstream_addr,
+        body.len(),
+        body
+    );
+    let response = common::send_raw(proxy, request.as_bytes()).await;
+
+    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    let expected = format!("received {} bytes", body_size);
+    assert!(
+        response.contains(&expected),
+        "Expected upstream to receive full body, got: {}",
+        response
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Chunked transfer encoding
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_http_post_chunked_transfer_encoding() {
+    setup();
+
+    let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_addr = upstream_listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        let (stream, _) = upstream_listener.accept().await.unwrap();
+        let (reader, writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+        let mut writer = BufWriter::new(writer);
+
+        let mut content_length = 0usize;
+        let mut line = String::new();
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line.trim().is_empty() {
+                break;
+            }
+            if let Some(val) = line.strip_prefix("content-length: ") {
+                content_length = val.trim().parse().unwrap_or(0);
+            }
+        }
+
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            reader.read_exact(&mut body).await.unwrap();
+        }
+
+        let body_str = String::from_utf8_lossy(&body);
+        let resp_body = format!("body={}", body_str);
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+            resp_body.len(),
+            resp_body
+        );
+        writer.write_all(resp.as_bytes()).await.unwrap();
+        writer.flush().await.unwrap();
+    });
+
+    let proxy = common::start_proxy().await;
+    // Chunked: "Hello" (5 bytes) + " World!" (7 bytes) = "Hello World!" (12 bytes)
+    let request = format!(
+        "POST http://{}/submit HTTP/1.1\r\nHost: {}\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nHello\r\n7\r\n World!\r\n0\r\n\r\n",
+        upstream_addr, upstream_addr
+    );
+    let response = common::send_raw(proxy, request.as_bytes()).await;
+
+    assert!(response.contains("200"), "Expected 200, got: {}", response);
+    assert!(
+        response.contains("body=Hello World!"),
+        "Expected chunked body reassembled as 'Hello World!', got: {}",
+        response
+    );
+}
